@@ -1,9 +1,6 @@
-# Host Nginx reverse proxy for the Laser Tag Docker container.
-# Production host Nginx reverse proxy for Combat Zone.
-# Copy this into /etc/nginx/sites-available/combatzone.
-#
-# The Docker container is only bound to 127.0.0.1:5173, so the public entry point
-# remains the host Nginx instance on port 80.
+# Optional Nginx container on the existing proxy_network.
+# For Nginx Proxy Manager, configure its Proxy Host UI instead.
+# This example handles HTTP; configure TLS at your public reverse proxy.
 
 server {
     listen 80;
@@ -12,7 +9,7 @@ server {
     server_name combatzone.v79sl.com;
 
     location / {
-        proxy_pass http://127.0.0.1:5173;
+        proxy_pass http://lasertag:80;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;

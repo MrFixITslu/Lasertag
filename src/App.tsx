@@ -93,7 +93,7 @@ function App() {
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
   useEffect(() => {
-    document.title = booking ? 'CombatZone SLU — Mission Booking' : 'CombatZone SLU — Play All Out';
+    document.title = booking ? 'CombatZone SLU — Mission Booking' : 'CombatZone SLU — Real World. Game On.';
     if (booking) document.querySelector<HTMLElement>('.brand-lockup')?.focus();
   }, [booking]);
   return booking ? <BookingApp /> : <Landing />;
