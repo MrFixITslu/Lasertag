@@ -69,16 +69,27 @@ A host Nginx example is provided at:
 deploy/host-nginx.conf.example
 ```
 
-Copy it into the host Nginx configuration, replace `YOUR_DOMAIN_OR_IP`, enable the site, then reload Nginx.
+The production hostname is `combatzone.v79sl.com`. Copy the provided config into the host Nginx configuration, enable the site, then reload Nginx.
 
 Example:
 
 ```bash
-sudo cp deploy/host-nginx.conf.example /etc/nginx/sites-available/lasertag
-sudo nano /etc/nginx/sites-available/lasertag
-sudo ln -s /etc/nginx/sites-available/lasertag /etc/nginx/sites-enabled/lasertag
+sudo cp deploy/host-nginx.conf.example /etc/nginx/sites-available/combatzone
+sudo ln -s /etc/nginx/sites-available/combatzone /etc/nginx/sites-enabled/combatzone
 sudo nginx -t
 sudo systemctl reload nginx
+```
+
+Public URL:
+
+```text
+http://combatzone.v79sl.com
+```
+
+Once DNS resolves correctly, add HTTPS with Certbot:
+
+```bash
+sudo certbot --nginx -d combatzone.v79sl.com
 ```
 
 For future deployments:
