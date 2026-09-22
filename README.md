@@ -39,67 +39,51 @@ npm run build
 ```
 
 
-## Docker deployment behind host Nginx
+## Docker deployment with Nginx Proxy Manager
 
-The production container serves the built Vite app with Nginx inside the container.
+The app joins **only the existing external `proxy_network`** and serves HTTP on
+container port **80**. It publishes no host ports. Nginx Proxy Manager must also
+be attached to `proxy_network`.
 
-Host port mapping:
+Check the network and start the app:
 
-```text
-127.0.0.1:5173 -> container:80
+```bash
+docker network inspect proxy_network
+docker compose config
+docker compose up -d --build
 ```
 
-This keeps port 5173 private to the server. The host Nginx instance remains the public entry point on port 80.
+If the network does not yet exist, create it once with
+`docker network create proxy_network` and attach your proxy to that network.
 
-Build and start:
+In Nginx Proxy Manager, configure the Proxy Host:
+
+- Domain: `combatzone.v79sl.com`
+- Scheme: `http`
+- Forward hostname: `lasertag`
+- Forward port: `80`
+- Request/select the domain's SSL certificate and enable Force SSL.
+
+Check the running container:
+
+```bash
+docker compose ps
+docker compose exec lasertag wget -qO- http://127.0.0.1/health
+docker inspect lasertag --format '{{json .NetworkSettings.Networks}}'
+```
+
+The network output should contain only `proxy_network`. The localhost health
+check runs **inside** the container; there is no host port 5173 mapping.
+
+For future deployments after merging the changes:
 
 ```bash
 git pull origin main
 docker compose up -d --build
 ```
 
-Check the container locally:
+For a separately managed Nginx container on `proxy_network`, see
+`deploy/proxy-nginx.conf.example`. Host-installed Nginx cannot resolve the
+Docker service name; use the shared Docker network with Nginx Proxy Manager.
 
-```bash
-curl http://127.0.0.1:5173/health
-curl -I http://127.0.0.1:5173/
-```
-
-A host Nginx example is provided at:
-
-```text
-deploy/host-nginx.conf.example
-```
-
-The production hostname is `combatzone.v79sl.com`. Copy the provided config into the host Nginx configuration, enable the site, then reload Nginx.
-
-Example:
-
-```bash
-sudo cp deploy/host-nginx.conf.example /etc/nginx/sites-available/combatzone
-sudo ln -s /etc/nginx/sites-available/combatzone /etc/nginx/sites-enabled/combatzone
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Public URL:
-
-```text
-http://combatzone.v79sl.com
-```
-
-Once DNS resolves correctly, add HTTPS with Certbot:
-
-```bash
-sudo certbot --nginx -d combatzone.v79sl.com
-```
-
-For future deployments:
-
-```bash
-cd /path/to/Lasertag
-git pull origin main
-docker compose up -d --build
-```
-
-The container uses `restart: unless-stopped`, so it returns automatically after server or Docker restarts.
+See `LANDING-MEDIA.md` for the Falcon video source and playback behaviour.
