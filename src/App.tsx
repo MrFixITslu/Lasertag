@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
+import Landing from './Landing';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
   Building2,
@@ -81,6 +82,24 @@ function getMission(id: string) {
 }
 
 function App() {
+  const [booking, setBooking] = useState(() => window.location.hash === '#booking');
+  useEffect(() => {
+    const navigate = () => {
+      const next = window.location.hash === '#booking';
+      setBooking(next);
+      if (next || !window.location.hash) window.scrollTo({ top: 0, behavior: 'instant' });
+    };
+    window.addEventListener('hashchange', navigate);
+    return () => window.removeEventListener('hashchange', navigate);
+  }, []);
+  useEffect(() => {
+    document.title = booking ? 'CombatZone SLU — Mission Booking' : 'CombatZone SLU — Play All Out';
+    if (booking) document.querySelector<HTMLElement>('.brand-lockup')?.focus();
+  }, [booking]);
+  return booking ? <BookingApp /> : <Landing />;
+}
+
+function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('mission');
   const [filter, setFilter] = useState<MissionFilter>('instant');
   const [draft, setDraft] = useState<BookingDraft>(initialDraft);
@@ -145,15 +164,15 @@ function App() {
       <TacticalBackdrop />
 
       <header className="topbar">
-        <div className="brand-lockup">
+        <a href="#" className="brand-lockup" style={{ color: 'inherit', textDecoration: 'none' }} aria-label="CombatZone SLU — back to home">
           <div className="brand-mark">
             <Crosshair size={23} />
           </div>
           <div>
-            <div className="brand-name">LASER TAG</div>
+            <div className="brand-name">COMBATZONE SLU</div>
             <div className="brand-subtitle">SAINT LUCIA // MOBILE OPERATIONS</div>
           </div>
-        </div>
+        </a>
 
         <div className="status-chip">
           <span className="status-dot" />
