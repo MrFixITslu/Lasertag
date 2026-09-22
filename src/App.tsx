@@ -1,3 +1,4 @@
+import Brand from './Brand';
 import Landing from './Landing';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
@@ -164,15 +165,7 @@ function BookingApp() {
       <TacticalBackdrop />
 
       <header className="topbar">
-        <a href="#" className="brand-lockup" style={{ color: 'inherit', textDecoration: 'none' }} aria-label="CombatZone SLU — back to home">
-          <div className="brand-mark">
-            <Crosshair size={23} />
-          </div>
-          <div>
-            <div className="brand-name">COMBATZONE SLU</div>
-            <div className="brand-subtitle">SAINT LUCIA // MOBILE OPERATIONS</div>
-          </div>
-        </a>
+        <Brand className="brand-lockup" />
 
         <div className="status-chip">
           <span className="status-dot" />
@@ -261,7 +254,7 @@ function BookingApp() {
       </main>
 
       <footer className="footer">
-        <span>TACTICAL BOOKING PROTOTYPE // V0.1</span>
+        <span>COMBATZONE SLU / MISSION BOOKING</span>
         <span>Safety decisions always override weather preference.</span>
       </footer>
     </div>

@@ -1,3 +1,4 @@
+import Brand from './Brand';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUpRight, Crosshair, MapPin, Pause, Play, Radio, Shield, Target, Users, X, Zap } from 'lucide-react';
 import { missions } from './data/missions';
@@ -54,7 +55,7 @@ export default function Landing() {
         <div className="cz-shade" aria-hidden="true" />
         <div className="cz-grain" aria-hidden="true" />
         <header className="cz-nav">
-          <a className="cz-brand" href="#" aria-label="CombatZone SLU home"><Crosshair /><span>COMBATZONE <b>SLU</b><small>MOBILE LASER TAG / SAINT LUCIA</small></span></a>
+          <Brand />
           <nav aria-label="Main navigation"><a href="#operations">THE MISSIONS</a><a href="#field-kit">THE EXPERIENCE</a></nav>
           <a href="#booking" className="cz-nav-cta">ENTER THE ZONE <ArrowUpRight size={16} /></a>
         </header>

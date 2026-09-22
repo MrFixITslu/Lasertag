@@ -1,9 +1,9 @@
 /* CombatZone: field manual typography, tactical panels, and cinematic media. */
 .cz-landing {
-  --acid: #d4fa44;
-  --paper: #eeeee4;
-  --ink: #0b0e0b;
-  --edge: #37412d;
+  --acid: var(--cz-accent);
+  --paper: var(--cz-paper);
+  --ink: var(--cz-ink);
+  --edge: var(--cz-edge);
   background: var(--ink);
   color: var(--paper);
   overflow: clip;
@@ -11,7 +11,7 @@
 .cz-landing a { color: inherit; text-decoration: none; }
 .cz-landing button { cursor: pointer; }
 .cz-landing a:focus-visible, .cz-landing button:focus-visible { outline: 3px solid var(--acid); outline-offset: 5px; }
-.cz-landing h1, .cz-landing h2, .cz-landing h3 { font-family: Impact, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif; font-stretch: condensed; font-weight: 900; }
+.cz-landing h1, .cz-landing h2, .cz-landing h3 { font-family: var(--cz-display-font); font-stretch: condensed; font-weight: 900; }
 .cz-hero { position: relative; min-height: 830px; min-height: max(800px, 100svh); isolation: isolate; padding: 0 5%; display: flex; flex-direction: column; }
 .cz-media, .cz-shade, .cz-grain { position: absolute; inset: 0; pointer-events: none; z-index: -3; }
 .cz-media { background: #121810 url('/media/netronic-falcon.webp') center right / cover no-repeat; }
@@ -19,10 +19,10 @@
 .cz-shade { z-index: -2; background: linear-gradient(90deg, #0b100bee 0%, #0b100bb8 43%, #0b100b25 80%), linear-gradient(0deg, #0b0e0b, transparent 35%, #0b0e0b70); }
 .cz-grain { z-index: -1; opacity: .13; background: repeating-linear-gradient(0deg, transparent 0 3px, #a4b48e50 3px 4px); }
 .cz-nav { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #c2cca53b; padding: 26px 0; }
-.cz-brand { display: flex; align-items: center; gap: 11px; font-size: 22px; font-weight: 950; letter-spacing: -1px; }
-.cz-brand > svg { color: var(--acid); width: 35px; height: 35px; }
-.cz-brand b { color: var(--acid); }
-.cz-brand small { display: block; margin-top: 5px; font: 8px monospace; letter-spacing: 2px; }
+
+
+
+
 .cz-nav nav { display: flex; gap: 30px; font: 10px monospace; letter-spacing: 1px; }
 .cz-nav nav a:hover { color: var(--acid); }
 .cz-nav-cta { display: flex; align-items: center; gap: 22px; padding: 13px 17px; border: 1px solid #acbc80; font: bold 10px monospace; }
@@ -96,7 +96,7 @@
 @media (min-width: 1600px) { .cz-hero-layout { max-width: 1600px; width: 100%; margin: auto; } }
 @media (max-width: 1050px) { .cz-target-display { display: none; }.cz-hero-layout { grid-template-columns: 1fr; }.cz-hero h1 { font-size: clamp(76px, 12vw, 132px); }.cz-nav nav { gap: 15px; }.cz-mission-select button { padding: 25px 16px; gap: 12px; }.cz-mission-brief { padding: 30px; }.cz-kit-copy { padding: 45px 8%; } }
 @media (max-width: 720px) {
-  .cz-hero { padding: 0 6%; min-height: max(730px, 100svh); }.cz-nav { padding: 21px 0; gap: 15px; }.cz-brand { font-size: 17px; gap: 8px; }.cz-brand > svg { width: 27px; height: 27px; }.cz-brand small { font-size: 6px; letter-spacing: 1px; }.cz-nav nav { display: none; }.cz-nav-cta { font-size: 8px; padding: 10px; gap: 7px; }.cz-nav-cta svg { width: 13px; }
+  .cz-hero { padding: 0 6%; min-height: max(730px, 100svh); }.cz-nav { padding: 21px 0; gap: 15px; }.cz-nav nav { display: none; }.cz-nav-cta { font-size: 8px; padding: 10px; gap: 7px; }.cz-nav-cta svg { width: 13px; }
   .cz-hero-layout { padding: 60px 0 45px; }.cz-hero h1 { font-size: clamp(53px, 12vw, 86px); }.cz-kicker { font-size: 8px; letter-spacing: 1px; }.cz-slogan { min-height: 35px; }.cz-slogan p { font-size: 12px; letter-spacing: .2px; }.cz-intro { font-size: 13px; max-width: 370px; }.cz-hero-actions { gap: 24px; }.cz-enter { padding: 18px; font-size: 11px; gap: 12px; }.cz-enter small { font-size: 7px; }.cz-preview { font-size: 8px; }.cz-shade { background: linear-gradient(90deg, #081008e8, #0810088c), linear-gradient(0deg, #0b0e0b, transparent 70%); }.cz-hero-bottom { flex-wrap: wrap; font-size: 7px; gap: 10px; }.cz-hero-bottom > span { display: none; }
   .cz-field-strip { justify-content: flex-start; gap: 20px 0; padding: 22px 6%; }.cz-field-strip span { width: 50%; font-size: 8px; gap: 7px; }.cz-field-strip svg { width: 15px; }
   .cz-operations { padding: 65px 6%; }.cz-section-head { display: block; margin-bottom: 30px; }.cz-section-head > p { margin-top: 22px; font-size: 13px; }.cz-mission-console { grid-template-columns: 1fr; }.cz-mission-select { display: grid; grid-template-columns: 1fr 1fr; }.cz-mission-select button { padding: 18px 12px; min-height: 96px; gap: 8px; border: 1px solid #37412d60; }.cz-mission-select strong { font-size: 10px; }.cz-mission-select small { font-size: 8px; }.cz-mission-number { font-size: 8px; }.cz-mission-select button > svg { display: none; }.cz-mission-brief { border-left: 0; border-top: 1px solid var(--edge); padding: 25px; }.cz-mission-brief h3 { font-size: 34px; }.cz-mission-brief p:not(.cz-kicker) { font-size: 13px; }.cz-brief-facts { gap: 22px; }.cz-brief-facts a { margin-left: 0; width: 100%; }.cz-kit { grid-template-columns: 1fr; }.cz-kit-image { min-height: 0; aspect-ratio: 3/2; }.cz-kit-copy { padding: 40px 6%; }.cz-kit-image img { object-fit: contain; }.cz-kit-stamp { left: 20px; top: 20px; }.cz-kit-caption { left: 20px; bottom: 15px; }.cz-final { padding: 65px 6% 75px; }.cz-final h2 { font-size: clamp(41px, 9.5vw, 68px); }.cz-final > p:not(.cz-kicker) { font-size: 12px; }.cz-footer { align-items: flex-start; flex-direction: column; gap: 20px; padding: 28px 6%; }.cz-theatre { padding: 16px; }.cz-theatre h2 { font-size: 24px; }

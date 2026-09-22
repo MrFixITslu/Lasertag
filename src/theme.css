@@ -1,0 +1,35 @@
+/* Shared CombatZone tokens keep the marketing and booking experiences aligned. */
+:root {
+  --cz-accent: #d4fa44;
+  --cz-accent-rgb: 212, 250, 68;
+  --cz-accent-hover: #e4ff80;
+  --cz-accent-edge: #839d26;
+  --cz-ink: #0b0e0b;
+  --cz-surface: #131a10;
+  --cz-surface-raised: #151b11;
+  --cz-edge: #37412d;
+  --cz-paper: #eeeee4;
+  --cz-muted: #b3bfa8;
+  --cz-display-font: Impact, 'Arial Narrow', 'Liberation Sans Narrow', sans-serif;
+  --cz-label-font: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.cz-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--cz-paper);
+  text-decoration: none;
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: -1px;
+}
+.cz-brand > svg { color: var(--cz-accent); width: 35px; height: 35px; flex-shrink: 0; }
+.cz-brand b { color: var(--cz-accent); }
+.cz-brand small { display: block; margin-top: 5px; font: 8px monospace; letter-spacing: 2px; }
+.cz-brand:focus-visible { outline: 3px solid var(--cz-accent); outline-offset: 5px; }
+@media (max-width: 720px) {
+  .cz-brand { font-size: 17px; gap: 8px; }
+  .cz-brand > svg { width: 27px; height: 27px; }
+  .cz-brand small { font-size: 6px; letter-spacing: 1px; }
+}
