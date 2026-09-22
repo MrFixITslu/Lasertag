@@ -1,0 +1,1117 @@
+import { FormEvent, useMemo, useState } from 'react';
+import {
+  BadgeCheck,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CloudRain,
+  CreditCard,
+  Crosshair,
+  Hotel,
+  Mail,
+  MapPin,
+  PartyPopper,
+  Phone,
+  Radar,
+  RotateCcw,
+  ShieldCheck,
+  Target,
+  TentTree,
+  UserRound,
+  Users,
+  WalletCards,
+  Zap
+} from 'lucide-react';
+import { directBookMissions, missions, requestMissions } from './data/missions';
+import {
+  buildDateChoices,
+  calculateBookingSummary,
+  fixedStartTimes,
+  formatDuration,
+  formatTime,
+  isDemoSlotUnavailable,
+  MIN_PLAYERS
+} from './lib/booking';
+import { demoPaymentProvider } from './lib/payment';
+import type { BookingDraft, MissionPackage } from './types';
+
+type BookingStage = 'mission' | 'squad' | 'deployment' | 'account' | 'review' | 'confirmed';
+type MissionFilter = 'instant' | 'request';
+
+const stageOrder: BookingStage[] = ['mission', 'squad', 'deployment', 'account', 'review'];
+const stageLabels = ['Mission', 'Squad', 'Deployment', 'Operator', 'Confirm'];
+
+const venueTypes = [
+  { id: 'home', label: 'Home / Private Property', icon: MapPin },
+  { id: 'field', label: 'Playing Field', icon: TentTree },
+  { id: 'community', label: 'Community Facility', icon: Building2 },
+  { id: 'hotel', label: 'Hotel / Resort', icon: Hotel },
+  { id: 'event', label: 'Event Venue', icon: PartyPopper },
+  { id: 'other', label: 'Other Location', icon: Target }
+];
+
+const initialDraft: BookingDraft = {
+  missionId: '',
+  players: 6,
+  date: '',
+  time: '',
+  venueType: '',
+  area: '',
+  address: '',
+  weatherFlexible: false,
+  notes: '',
+  customer: {
+    fullName: '',
+    email: '',
+    phone: '',
+    marketingOptIn: true
+  }
+};
+
+function money(value: number, currency: 'XCD' | 'USD') {
+  return `${currency === 'XCD' ? 'EC$' : 'US$'}${value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function getMission(id: string) {
+  return missions.find((mission) => mission.id === id);
+}
+
+function App() {
+  const [stage, setStage] = useState<BookingStage>('mission');
+  const [filter, setFilter] = useState<MissionFilter>('instant');
+  const [draft, setDraft] = useState<BookingDraft>(initialDraft);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmationRef, setConfirmationRef] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+
+  const selectedMission = getMission(draft.missionId);
+  const dates = useMemo(() => buildDateChoices(12), []);
+  const summary = selectedMission
+    ? calculateBookingSummary(selectedMission, draft.players)
+    : null;
+
+  const activeMissionList = filter === 'instant' ? directBookMissions : requestMissions;
+  const currentStep = stageOrder.indexOf(stage);
+
+  const updateDraft = <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const selectMission = (mission: MissionPackage) => {
+    setDraft((current) => ({
+      ...current,
+      missionId: mission.id,
+      players: Math.max(current.players, mission.minPlayers)
+    }));
+    setStage('squad');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const goBack = () => {
+    const index = stageOrder.indexOf(stage);
+    if (index <= 0) {
+      setStage('mission');
+      return;
+    }
+    setStage(stageOrder[index - 1]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const goForward = () => {
+    const index = stageOrder.indexOf(stage);
+    if (index < 0 || index >= stageOrder.length - 1) return;
+    setStage(stageOrder[index + 1]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deploymentComplete =
+    Boolean(draft.date) &&
+    Boolean(draft.time) &&
+    Boolean(draft.venueType) &&
+    Boolean(draft.area.trim()) &&
+    Boolean(draft.address.trim());
+
+  const accountComplete =
+    Boolean(draft.customer.fullName.trim()) &&
+    Boolean(draft.customer.email.trim()) &&
+    Boolean(draft.customer.phone.trim());
+
+  const finalizeMission = async () => {
+    if (!selectedMission || !summary) return;
+
+    setSubmitting(true);
+    const ref = `LT-${Date.now().toString().slice(-8)}`;
+
+    try {
+      if (selectedMission.bookingMode === 'instant') {
+        const payment = await demoPaymentProvider.createPayment({
+          amount: summary.totalPrice,
+          currency: summary.currency,
+          bookingReference: ref,
+          customerEmail: draft.customer.email
+        });
+        setPaymentReference(payment.transactionId || '');
+      }
+
+      const demoCustomer = {
+        ...draft.customer,
+        createdAt: new Date().toISOString()
+      };
+      const demoBooking = {
+        reference: ref,
+        draft,
+        mission: selectedMission.name,
+        summary,
+        status: selectedMission.bookingMode === 'instant' ? 'demo_paid' : 'request_received',
+        createdAt: new Date().toISOString()
+      };
+
+      localStorage.setItem('lasertag.demo.customer', JSON.stringify(demoCustomer));
+      localStorage.setItem('lasertag.demo.latestBooking', JSON.stringify(demoBooking));
+
+      setConfirmationRef(ref);
+      setStage('confirmed');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const restart = () => {
+    setDraft(initialDraft);
+    setConfirmationRef('');
+    setPaymentReference('');
+    setFilter('instant');
+    setStage('mission');
+  };
+
+  return (
+    <div className="app-shell">
+      <TacticalBackdrop />
+
+      <header className="topbar">
+        <div className="brand-lockup">
+          <div className="brand-mark">
+            <Crosshair size={23} />
+          </div>
+          <div>
+            <div className="brand-name">LASER TAG</div>
+            <div className="brand-subtitle">SAINT LUCIA // MOBILE OPERATIONS</div>
+          </div>
+        </div>
+
+        <div className="status-chip">
+          <span className="status-dot" />
+          ISLAND-WIDE DEPLOYMENT
+        </div>
+      </header>
+
+      {stage !== 'confirmed' && (
+        <nav className="mission-progress" aria-label="Booking progress">
+          {stageLabels.map((label, index) => {
+            const isComplete = currentStep > index;
+            const isActive = currentStep === index;
+            return (
+              <div
+                key={label}
+                className={`progress-step ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
+              >
+                <div className="progress-node">
+                  {isComplete ? <Check size={13} /> : String(index + 1).padStart(2, '0')}
+                </div>
+                <span>{label}</span>
+              </div>
+            );
+          })}
+        </nav>
+      )}
+
+      <main className="page-frame">
+        {stage === 'mission' && (
+          <MissionSelect
+            filter={filter}
+            setFilter={setFilter}
+            missions={activeMissionList}
+            onSelect={selectMission}
+          />
+        )}
+
+        {stage === 'squad' && selectedMission && summary && (
+          <SquadBuilder
+            mission={selectedMission}
+            players={draft.players}
+            summary={summary}
+            onPlayersChange={(players) => updateDraft('players', players)}
+            onBack={goBack}
+            onNext={goForward}
+          />
+        )}
+
+        {stage === 'deployment' && selectedMission && summary && (
+          <DeploymentStep
+            draft={draft}
+            updateDraft={updateDraft}
+            dates={dates}
+            mission={selectedMission}
+            summary={summary}
+            onBack={goBack}
+            onNext={goForward}
+            canContinue={deploymentComplete}
+          />
+        )}
+
+        {stage === 'account' && selectedMission && (
+          <AccountStep
+            draft={draft}
+            setDraft={setDraft}
+            onBack={goBack}
+            onNext={goForward}
+            canContinue={accountComplete}
+          />
+        )}
+
+        {stage === 'review' && selectedMission && summary && (
+          <ReviewStep
+            mission={selectedMission}
+            draft={draft}
+            summary={summary}
+            onBack={goBack}
+            onFinalize={finalizeMission}
+            submitting={submitting}
+          />
+        )}
+
+        {stage === 'confirmed' && selectedMission && summary && (
+          <Confirmation
+            mission={selectedMission}
+            draft={draft}
+            summary={summary}
+            reference={confirmationRef}
+            paymentReference={paymentReference}
+            onRestart={restart}
+          />
+        )}
+      </main>
+
+      <footer className="footer">
+        <span>TACTICAL BOOKING PROTOTYPE // V0.1</span>
+        <span>Safety decisions always override weather preference.</span>
+      </footer>
+    </div>
+  );
+}
+
+function TacticalBackdrop() {
+  return (
+    <div className="tactical-backdrop" aria-hidden="true">
+      <div className="grid-plane" />
+      <div className="radar radar-one">
+        <div className="radar-sweep" />
+      </div>
+      <div className="radar radar-two">
+        <div className="radar-sweep" />
+      </div>
+      <div className="scan-line" />
+      <div className="noise-layer" />
+    </div>
+  );
+}
+
+function MissionSelect({
+  filter,
+  setFilter,
+  missions,
+  onSelect
+}: {
+  filter: MissionFilter;
+  setFilter: (filter: MissionFilter) => void;
+  missions: MissionPackage[];
+  onSelect: (mission: MissionPackage) => void;
+}) {
+  return (
+    <section className="hero-stack">
+      <div className="eyebrow">
+        <Radar size={16} />
+        MISSION CONTROL ONLINE
+      </div>
+
+      <div className="hero-copy">
+        <div>
+          <h1>
+            SELECT YOUR
+            <span> MISSION.</span>
+          </h1>
+          <p>
+            Assemble your squad, choose your deployment window, and bring the battle to your location.
+          </p>
+        </div>
+
+        <div className="hero-reticle">
+          <div className="reticle-core">
+            <Crosshair size={50} />
+          </div>
+          <span>TARGET AREA</span>
+          <strong>SAINT LUCIA</strong>
+        </div>
+      </div>
+
+      <div className="mode-toggle">
+        <button
+          className={filter === 'instant' ? 'active' : ''}
+          onClick={() => setFilter('instant')}
+          type="button"
+        >
+          <Zap size={16} />
+          BOOK NOW
+          <small>Public, birthdays & events</small>
+        </button>
+        <button
+          className={filter === 'request' ? 'active' : ''}
+          onClick={() => setFilter('request')}
+          type="button"
+        >
+          <ShieldCheck size={16} />
+          REQUEST A MISSION
+          <small>Corporate & resort operations</small>
+        </button>
+      </div>
+
+      <div className="mission-grid">
+        {missions.map((mission, index) => (
+          <button
+            key={mission.id}
+            className="mission-card"
+            onClick={() => onSelect(mission)}
+            type="button"
+            style={{ '--mission-delay': `${index * 55}ms` } as React.CSSProperties}
+          >
+            <div className="card-scan" />
+            <div className="mission-card-top">
+              <div>
+                <span className="call-sign">{mission.callSign}</span>
+                <h2>{mission.name}</h2>
+              </div>
+              <div className="target-icon">
+                <Target size={18} />
+              </div>
+            </div>
+
+            <p>{mission.description}</p>
+
+            <div className="tag-row">
+              {mission.highlights.map((highlight) => (
+                <span key={highlight}>{highlight}</span>
+              ))}
+            </div>
+
+            <div className="mission-card-footer">
+              <div>
+                <span className="meta-label">
+                  {mission.pricingMode === 'per_participant' ? 'PER PLAYER' : mission.bookingMode === 'request' ? 'FROM' : 'MISSION TOTAL'}
+                </span>
+                <strong>{money(mission.price, mission.currency)}</strong>
+              </div>
+              <div>
+                <span className="meta-label">BASE TIME</span>
+                <strong>{formatDuration(mission.durationMinutes)}</strong>
+              </div>
+              <div className="deploy-link">
+                {mission.bookingMode === 'instant' ? 'DEPLOY' : 'BRIEF US'}
+                <ChevronRight size={16} />
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="intel-strip">
+        <div>
+          <Users size={17} />
+          <span>MINIMUM SQUAD</span>
+          <strong>6 PLAYERS</strong>
+        </div>
+        <div>
+          <Crosshair size={17} />
+          <span>ACTIVE AT ONCE</span>
+          <strong>12 PLAYERS</strong>
+        </div>
+        <div>
+          <MapPin size={17} />
+          <span>DEPLOYMENT</span>
+          <strong>ISLAND-WIDE</strong>
+        </div>
+        <div>
+          <CalendarDays size={17} />
+          <span>START WINDOWS</span>
+          <strong>08:00–16:00</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SquadBuilder({
+  mission,
+  players,
+  summary,
+  onPlayersChange,
+  onBack,
+  onNext
+}: {
+  mission: MissionPackage;
+  players: number;
+  summary: ReturnType<typeof calculateBookingSummary>;
+  onPlayersChange: (players: number) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const squads = Array.from({ length: summary.squadCount }, (_, index) => {
+    const playersBefore = index * 6;
+    return Math.min(6, Math.max(0, players - playersBefore));
+  });
+
+  return (
+    <section className="panel-stack">
+      <StageHeading
+        number="02"
+        eyebrow="SQUAD CONFIGURATION"
+        title="ASSEMBLE YOUR SQUAD."
+        text="Six players form a squad. Up to twelve can battle simultaneously; larger groups rotate through the mission."
+      />
+
+      <div className="two-column-layout">
+        <div className="hud-panel squad-control">
+          <div className="hud-corners" />
+          <div className="selected-mission-mini">
+            <span>{mission.callSign}</span>
+            <strong>{mission.name}</strong>
+          </div>
+
+          <div className="player-counter">
+            <button
+              type="button"
+              onClick={() => onPlayersChange(Math.max(MIN_PLAYERS, players - 1))}
+              disabled={players <= MIN_PLAYERS}
+              aria-label="Remove player"
+            >
+              −
+            </button>
+            <div>
+              <strong>{players}</strong>
+              <span>PLAYERS</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onPlayersChange(Math.min(60, players + 1))}
+              aria-label="Add player"
+            >
+              +
+            </button>
+          </div>
+
+          <div className="quick-counts">
+            {[6, 12, 18, 24, 30].map((count) => (
+              <button
+                type="button"
+                className={players === count ? 'active' : ''}
+                onClick={() => onPlayersChange(count)}
+                key={count}
+              >
+                {count}
+              </button>
+            ))}
+          </div>
+
+          <div className="rotation-rule">
+            <RotateCcw size={18} />
+            <div>
+              <strong>ROTATION PROTOCOL</strong>
+              <span>Every additional started group of up to 6 players beyond 12 adds 30 minutes.</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="hud-panel">
+          <div className="panel-label">SQUAD MAP</div>
+          <div className="squad-map">
+            {squads.map((size, index) => (
+              <div className="squad-row" key={index}>
+                <div className="squad-name">
+                  <span>SQUAD</span>
+                  <strong>{String.fromCharCode(65 + index)}</strong>
+                </div>
+                <div className="operators">
+                  {Array.from({ length: 6 }, (_, playerIndex) => (
+                    <span
+                      key={playerIndex}
+                      className={playerIndex < size ? 'operator active' : 'operator'}
+                    >
+                      <UserRound size={15} />
+                    </span>
+                  ))}
+                </div>
+                <span className="squad-count">{size}/6</span>
+              </div>
+            ))}
+          </div>
+
+          <div className={`rotation-status ${summary.rotationsRequired ? 'warning' : 'clear'}`}>
+            {summary.rotationsRequired ? <RotateCcw size={17} /> : <BadgeCheck size={17} />}
+            <div>
+              <strong>
+                {summary.rotationsRequired ? 'ROTATIONS REQUIRED' : 'FULL SIMULTANEOUS DEPLOYMENT'}
+              </strong>
+              <span>
+                {summary.rotationsRequired
+                  ? `Mission extended by ${formatDuration(summary.rotationExtensionMinutes)}.`
+                  : 'Your full group can play within the 12-player active capacity.'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <MissionMetrics summary={summary} mission={mission} />
+      <NavActions onBack={onBack} onNext={onNext} nextLabel="SET DEPLOYMENT" />
+    </section>
+  );
+}
+
+function DeploymentStep({
+  draft,
+  updateDraft,
+  dates,
+  mission,
+  summary,
+  onBack,
+  onNext,
+  canContinue
+}: {
+  draft: BookingDraft;
+  updateDraft: <K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) => void;
+  dates: ReturnType<typeof buildDateChoices>;
+  mission: MissionPackage;
+  summary: ReturnType<typeof calculateBookingSummary>;
+  onBack: () => void;
+  onNext: () => void;
+  canContinue: boolean;
+}) {
+  return (
+    <section className="panel-stack">
+      <StageHeading
+        number="03"
+        eyebrow="DEPLOYMENT WINDOW"
+        title="LOCK DATE & LOCATION."
+        text="Choose a fixed start window, then tell us where the mobile arena needs to deploy."
+      />
+
+      <div className="hud-panel section-block">
+        <div className="panel-label">SELECT DATE</div>
+        <div className="date-grid">
+          {dates.map((date) => (
+            <button
+              key={date.value}
+              type="button"
+              className={draft.date === date.value ? 'date-tile active' : 'date-tile'}
+              onClick={() => {
+                updateDraft('date', date.value);
+                updateDraft('time', '');
+              }}
+            >
+              <span>{date.weekday}</span>
+              <strong>{date.day}</strong>
+              <small>{date.month}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="hud-panel section-block">
+        <div className="panel-heading-row">
+          <div className="panel-label">SELECT START TIME</div>
+          <span className="panel-hint">Last mission may begin at 4:00 PM</span>
+        </div>
+        <div className="time-grid">
+          {fixedStartTimes.map((time) => {
+            const unavailable = isDemoSlotUnavailable(draft.date, time);
+            return (
+              <button
+                key={time}
+                type="button"
+                disabled={!draft.date || unavailable}
+                className={draft.time === time ? 'time-slot active' : 'time-slot'}
+                onClick={() => updateDraft('time', time)}
+              >
+                <span>{formatTime(time)}</span>
+                <small>{unavailable ? 'LOCKED' : 'AVAILABLE'}</small>
+              </button>
+            );
+          })}
+        </div>
+        <p className="demo-note">
+          Availability is simulated in this prototype. Production slots will come from the booking calendar and travel rules.
+        </p>
+      </div>
+
+      <div className="two-column-layout">
+        <div className="hud-panel section-block">
+          <div className="panel-label">VENUE TYPE</div>
+          <div className="venue-grid">
+            {venueTypes.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                className={draft.venueType === id ? 'venue-card active' : 'venue-card'}
+                onClick={() => updateDraft('venueType', id)}
+              >
+                <Icon size={17} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hud-panel section-block form-stack">
+          <div className="panel-label">DEPLOYMENT COORDINATES</div>
+          <label>
+            <span>Town / Area</span>
+            <input
+              value={draft.area}
+              onChange={(event) => updateDraft('area', event.target.value)}
+              placeholder="e.g. Gros Islet, Castries, Soufrière"
+            />
+          </label>
+          <label>
+            <span>Venue / Address</span>
+            <input
+              value={draft.address}
+              onChange={(event) => updateDraft('address', event.target.value)}
+              placeholder="Venue name, street, landmark or directions"
+            />
+          </label>
+          <div className="island-service">
+            <MapPin size={16} />
+            <div>
+              <strong>ISLAND-WIDE SERVICE AREA</strong>
+              <span>Travel-time pricing and buffers can be connected later.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="hud-panel weather-panel">
+        <CloudRain size={24} />
+        <div className="weather-copy">
+          <div className="panel-label">WEATHER PROTOCOL</div>
+          <strong>LIGHT RAIN FLEXIBILITY</strong>
+          <p>
+            Outdoor missions may continue in light rain when the operator determines conditions are safe.
+          </p>
+        </div>
+        <label className="tactical-checkbox">
+          <input
+            type="checkbox"
+            checked={draft.weatherFlexible}
+            onChange={(event) => updateDraft('weatherFlexible', event.target.checked)}
+          />
+          <span className="checkbox-box"><Check size={14} /></span>
+          <span>I am okay playing in light rain if conditions remain safe.</span>
+        </label>
+      </div>
+
+      <div className="hud-panel section-block form-stack">
+        <div className="panel-label">MISSION NOTES — OPTIONAL</div>
+        <textarea
+          rows={3}
+          value={draft.notes}
+          onChange={(event) => updateDraft('notes', event.target.value)}
+          placeholder="Birthday name, special setup instructions, access notes, accessibility needs, event details…"
+        />
+      </div>
+
+      <MissionMetrics summary={summary} mission={mission} compact />
+      <NavActions
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel="OPERATOR DETAILS"
+        disabled={!canContinue}
+      />
+    </section>
+  );
+}
+
+function AccountStep({
+  draft,
+  setDraft,
+  onBack,
+  onNext,
+  canContinue
+}: {
+  draft: BookingDraft;
+  setDraft: React.Dispatch<React.SetStateAction<BookingDraft>>;
+  onBack: () => void;
+  onNext: () => void;
+  canContinue: boolean;
+}) {
+  const updateCustomer = (key: keyof BookingDraft['customer'], value: string | boolean) => {
+    setDraft((current) => ({
+      ...current,
+      customer: {
+        ...current.customer,
+        [key]: value
+      }
+    }));
+  };
+
+  return (
+    <section className="panel-stack narrow-panel">
+      <StageHeading
+        number="04"
+        eyebrow="OPERATOR PROFILE"
+        title="CREATE YOUR CALL SIGN."
+        text="Your lightweight customer profile will become the home for bookings, rescheduling, loyalty rewards, and future mission history."
+      />
+
+      <form
+        className="hud-panel account-form"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          if (canContinue) onNext();
+        }}
+      >
+        <div className="account-banner">
+          <ShieldCheck size={24} />
+          <div>
+            <strong>LOYALTY-READY ACCOUNT</strong>
+            <span>No password is stored in this prototype. Production authentication will use a secure identity service.</span>
+          </div>
+        </div>
+
+        <label>
+          <span><UserRound size={14} /> Full Name</span>
+          <input
+            value={draft.customer.fullName}
+            onChange={(event) => updateCustomer('fullName', event.target.value)}
+            autoComplete="name"
+            placeholder="Mission operator name"
+          />
+        </label>
+
+        <label>
+          <span><Mail size={14} /> Email</span>
+          <input
+            type="email"
+            value={draft.customer.email}
+            onChange={(event) => updateCustomer('email', event.target.value)}
+            autoComplete="email"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <label>
+          <span><Phone size={14} /> Phone / WhatsApp</span>
+          <input
+            type="tel"
+            value={draft.customer.phone}
+            onChange={(event) => updateCustomer('phone', event.target.value)}
+            autoComplete="tel"
+            placeholder="+1 758 ..."
+          />
+        </label>
+
+        <label className="tactical-checkbox inline-check">
+          <input
+            type="checkbox"
+            checked={draft.customer.marketingOptIn}
+            onChange={(event) => updateCustomer('marketingOptIn', event.target.checked)}
+          />
+          <span className="checkbox-box"><Check size={14} /></span>
+          <span>Send me mission drops, loyalty rewards, and special-event offers.</span>
+        </label>
+      </form>
+
+      <NavActions
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel="REVIEW MISSION"
+        disabled={!canContinue}
+      />
+    </section>
+  );
+}
+
+function ReviewStep({
+  mission,
+  draft,
+  summary,
+  onBack,
+  onFinalize,
+  submitting
+}: {
+  mission: MissionPackage;
+  draft: BookingDraft;
+  summary: ReturnType<typeof calculateBookingSummary>;
+  onBack: () => void;
+  onFinalize: () => void;
+  submitting: boolean;
+}) {
+  const venueLabel = venueTypes.find((item) => item.id === draft.venueType)?.label || draft.venueType;
+
+  return (
+    <section className="panel-stack">
+      <StageHeading
+        number="05"
+        eyebrow="MISSION BRIEF"
+        title="CONFIRM THE OPERATION."
+        text={
+          mission.bookingMode === 'instant'
+            ? 'Review the mission brief. Instant missions require full payment to secure the deployment window.'
+            : 'Review the mission brief. Corporate and resort operations are sent to Mission Control for customization.'
+        }
+      />
+
+      <div className="review-layout">
+        <div className="mission-brief">
+          <div className="brief-header">
+            <div>
+              <span>MISSION FILE</span>
+              <strong>{mission.callSign}</strong>
+            </div>
+            <Crosshair size={35} />
+          </div>
+
+          <div className="brief-title">
+            <small>SELECTED OPERATION</small>
+            <h2>{mission.name}</h2>
+          </div>
+
+          <BriefRow label="Squad" value={`${draft.players} players // ${summary.squadCount} squad${summary.squadCount === 1 ? '' : 's'}`} />
+          <BriefRow label="Date" value={draft.date} />
+          <BriefRow label="Start" value={formatTime(draft.time)} />
+          <BriefRow label="Mission time" value={formatDuration(summary.totalMissionMinutes)} />
+          <BriefRow label="Ops buffer" value={formatDuration(summary.operationalBufferMinutes)} />
+          <BriefRow label="Deployment" value={`${venueLabel} // ${draft.area}`} />
+          <BriefRow label="Weather" value={draft.weatherFlexible ? 'Light-rain flexible' : 'Dry-weather preference'} />
+          <BriefRow label="Operator" value={draft.customer.fullName} />
+
+          {summary.rotationsRequired && (
+            <div className="brief-alert">
+              <RotateCcw size={16} />
+              Squad rotations add {formatDuration(summary.rotationExtensionMinutes)} to this mission.
+            </div>
+          )}
+
+          <div className="brief-total">
+            <span>{mission.bookingMode === 'instant' ? 'MISSION TOTAL' : 'WORKING ESTIMATE'}</span>
+            <strong>{money(summary.totalPrice, summary.currency)}</strong>
+            {mission.bookingMode === 'request' && <small>Final scope confirmed by Mission Control.</small>}
+          </div>
+        </div>
+
+        <div className="hud-panel checkout-panel">
+          {mission.bookingMode === 'instant' ? (
+            <>
+              <div className="checkout-icon"><CreditCard size={28} /></div>
+              <div className="panel-label">FULL PAYMENT REQUIRED</div>
+              <h3>SECURE THE SLOT</h3>
+              <p>
+                The production build will hand this total to the selected Caribbean payment gateway. The current prototype uses a demo provider only.
+              </p>
+              <div className="payment-total">
+                <span>PAY NOW</span>
+                <strong>{money(summary.totalPrice, summary.currency)}</strong>
+              </div>
+              <button
+                type="button"
+                className="primary-action payment-action"
+                onClick={onFinalize}
+                disabled={submitting}
+              >
+                <WalletCards size={18} />
+                {submitting ? 'AUTHORIZING…' : 'DEMO: PAY IN FULL & LOCK MISSION'}
+              </button>
+              <small className="prototype-warning">
+                No real card details are collected or charged in this prototype.
+              </small>
+            </>
+          ) : (
+            <>
+              <div className="checkout-icon"><ShieldCheck size={28} /></div>
+              <div className="panel-label">CUSTOM OPERATION</div>
+              <h3>SEND TO MISSION CONTROL</h3>
+              <p>
+                Corporate and resort deployments need a final operational review before payment and confirmation.
+              </p>
+              <button
+                type="button"
+                className="primary-action payment-action"
+                onClick={onFinalize}
+                disabled={submitting}
+              >
+                <Radar size={18} />
+                {submitting ? 'TRANSMITTING…' : 'REQUEST THIS MISSION'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <NavActions onBack={onBack} hideNext />
+    </section>
+  );
+}
+
+function Confirmation({
+  mission,
+  draft,
+  summary,
+  reference,
+  paymentReference,
+  onRestart
+}: {
+  mission: MissionPackage;
+  draft: BookingDraft;
+  summary: ReturnType<typeof calculateBookingSummary>;
+  reference: string;
+  paymentReference: string;
+  onRestart: () => void;
+}) {
+  return (
+    <section className="confirmation-screen">
+      <div className="confirmation-radar">
+        <div className="confirm-pulse" />
+        <BadgeCheck size={55} />
+      </div>
+
+      <div className="eyebrow">
+        <span className="status-dot" />
+        {mission.bookingMode === 'instant' ? 'DEMO PAYMENT VERIFIED' : 'REQUEST TRANSMITTED'}
+      </div>
+
+      <h1>
+        {mission.bookingMode === 'instant' ? 'MISSION LOCKED.' : 'BRIEF RECEIVED.'}
+      </h1>
+
+      <p>
+        {mission.bookingMode === 'instant'
+          ? 'Your prototype booking has been secured locally. Connect the live payment and scheduling services before accepting real bookings.'
+          : 'Mission Control has your prototype request. Production will send this request to the operations dashboard for review.'}
+      </p>
+
+      <div className="confirmation-card">
+        <BriefRow label="Reference" value={reference} />
+        <BriefRow label="Operation" value={mission.name} />
+        <BriefRow label="Squad" value={`${draft.players} players`} />
+        <BriefRow label="Deployment" value={`${draft.date} // ${formatTime(draft.time)}`} />
+        <BriefRow label="Area" value={draft.area} />
+        <BriefRow label="Mission time" value={formatDuration(summary.totalMissionMinutes)} />
+        {paymentReference && <BriefRow label="Demo payment" value={paymentReference} />}
+      </div>
+
+      <button className="primary-action restart-action" type="button" onClick={onRestart}>
+        <Crosshair size={18} />
+        BUILD ANOTHER MISSION
+      </button>
+    </section>
+  );
+}
+
+function StageHeading({
+  number,
+  eyebrow,
+  title,
+  text
+}: {
+  number: string;
+  eyebrow: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="stage-heading">
+      <div className="stage-number">{number}</div>
+      <div>
+        <div className="eyebrow">{eyebrow}</div>
+        <h1>{title}</h1>
+        <p>{text}</p>
+      </div>
+    </div>
+  );
+}
+
+function MissionMetrics({
+  summary,
+  mission,
+  compact = false
+}: {
+  summary: ReturnType<typeof calculateBookingSummary>;
+  mission: MissionPackage;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? 'mission-metrics compact' : 'mission-metrics'}>
+      <div>
+        <span>BASE MISSION</span>
+        <strong>{formatDuration(summary.baseDurationMinutes)}</strong>
+      </div>
+      <div>
+        <span>ROTATION EXTENSION</span>
+        <strong>{summary.rotationExtensionMinutes ? `+${formatDuration(summary.rotationExtensionMinutes)}` : 'NONE'}</strong>
+      </div>
+      <div>
+        <span>OPS BUFFER</span>
+        <strong>+{formatDuration(summary.operationalBufferMinutes)}</strong>
+      </div>
+      <div>
+        <span>{mission.bookingMode === 'request' ? 'WORKING ESTIMATE' : 'MISSION TOTAL'}</span>
+        <strong>{money(summary.totalPrice, summary.currency)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function BriefRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="brief-row">
+      <span>{label}</span>
+      <strong>{value || '—'}</strong>
+    </div>
+  );
+}
+
+function NavActions({
+  onBack,
+  onNext,
+  nextLabel,
+  disabled = false,
+  hideNext = false
+}: {
+  onBack: () => void;
+  onNext?: () => void;
+  nextLabel?: string;
+  disabled?: boolean;
+  hideNext?: boolean;
+}) {
+  return (
+    <div className="nav-actions">
+      <button type="button" className="secondary-action" onClick={onBack}>
+        <ChevronLeft size={16} />
+        BACK
+      </button>
+
+      {!hideNext && onNext && (
+        <button type="button" className="primary-action" onClick={onNext} disabled={disabled}>
+          {nextLabel || 'CONTINUE'}
+          <ChevronRight size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default App;
