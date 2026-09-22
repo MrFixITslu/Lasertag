@@ -35,3 +35,58 @@ Build:
 ```bash
 npm run build
 ```
+
+
+## Docker deployment behind host Nginx
+
+The production container serves the built Vite app with Nginx inside the container.
+
+Host port mapping:
+
+```text
+127.0.0.1:5173 -> container:80
+```
+
+This keeps port 5173 private to the server. The host Nginx instance remains the public entry point on port 80.
+
+Build and start:
+
+```bash
+git pull origin main
+docker compose up -d --build
+```
+
+Check the container locally:
+
+```bash
+curl http://127.0.0.1:5173/health
+curl -I http://127.0.0.1:5173/
+```
+
+A host Nginx example is provided at:
+
+```text
+deploy/host-nginx.conf.example
+```
+
+Copy it into the host Nginx configuration, replace `YOUR_DOMAIN_OR_IP`, enable the site, then reload Nginx.
+
+Example:
+
+```bash
+sudo cp deploy/host-nginx.conf.example /etc/nginx/sites-available/lasertag
+sudo nano /etc/nginx/sites-available/lasertag
+sudo ln -s /etc/nginx/sites-available/lasertag /etc/nginx/sites-enabled/lasertag
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+For future deployments:
+
+```bash
+cd /path/to/Lasertag
+git pull origin main
+docker compose up -d --build
+```
+
+The container uses `restart: unless-stopped`, so it returns automatically after server or Docker restarts.
