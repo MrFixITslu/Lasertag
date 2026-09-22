@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateBookingSummary } from './booking';
+import { calculateBookingSummary, buildDateChoices, validCustomer } from './booking';
 import type { MissionPackage } from '../types';
 
 const mission: MissionPackage = {
@@ -50,5 +50,29 @@ describe('calculateBookingSummary', () => {
 
     expect(result.totalPrice).toBe(650);
     expect(result.totalMissionMinutes).toBe(90);
+  });
+});
+
+
+describe('production input boundaries', () => {
+  it('uses Saint Lucia calendar dates around UTC midnight and year rollover', () => {
+    expect(buildDateChoices(1, new Date('2026-01-01T02:00:00Z'))[0].value).toBe('2026-01-01');
+    expect(buildDateChoices(1, new Date('2026-01-01T05:00:00Z'))[0].value).toBe('2026-01-02');
+  });
+  it('rejects malformed contact details even outside native form submission', () => {
+    const customer = { fullName: 'Test Customer', email: 'test@example.com', phone: '+1 758 555 1234', marketingOptIn: false };
+    expect(validCustomer(customer)).toBe(true);
+    expect(validCustomer({ ...customer, email: 'invalid' })).toBe(false);
+    expect(validCustomer({ ...customer, phone: 'abcdefg' })).toBe(false);
+  });
+  it('keeps calculations finite and bounded', () => {
+    expect(calculateBookingSummary(mission, Infinity).totalPrice).toBe(180);
+    expect(calculateBookingSummary(mission, NaN).totalPrice).toBe(180);
+    expect(calculateBookingSummary(mission, 1000).totalPrice).toBe(1800);
+  });
+  it('uses configured package minimum and equipment capacity', () => {
+    const custom = { ...mission, minPlayers: 10, maxConcurrentPlayers: 18 };
+    expect(calculateBookingSummary(custom, 6).totalPrice).toBe(300);
+    expect(calculateBookingSummary(custom, 18).rotationExtensionMinutes).toBe(0);
   });
 });

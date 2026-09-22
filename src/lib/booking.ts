@@ -1,4 +1,4 @@
-import type { BookingSummary, MissionPackage } from '../types';
+import type { BookingSummary, MissionPackage, CustomerProfile } from '../types';
 
 export const MIN_PLAYERS = 6;
 export const MAX_CONCURRENT_PLAYERS = 12;
@@ -22,15 +22,15 @@ export function calculateBookingSummary(
   mission: MissionPackage,
   players: number
 ): BookingSummary {
-  const normalizedPlayers = Math.max(MIN_PLAYERS, Math.floor(players || MIN_PLAYERS));
-  const overflowPlayers = Math.max(0, normalizedPlayers - MAX_CONCURRENT_PLAYERS);
+  const normalizedPlayers = Math.min(60, Math.max(mission.minPlayers, Math.floor(Number.isFinite(players) ? players : mission.minPlayers)));
+  const overflowPlayers = Math.max(0, normalizedPlayers - mission.maxConcurrentPlayers);
   const extraRotationGroups = Math.ceil(overflowPlayers / ROTATION_GROUP_SIZE);
   const rotationExtensionMinutes = extraRotationGroups * ROTATION_EXTENSION_MINUTES;
   const squadCount = Math.ceil(normalizedPlayers / ROTATION_GROUP_SIZE);
 
   const totalPrice =
     mission.pricingMode === 'per_participant'
-      ? mission.price * normalizedPlayers
+      ? Math.round(mission.price * 100) * normalizedPlayers / 100
       : mission.price;
 
   return {
@@ -41,7 +41,7 @@ export function calculateBookingSummary(
     totalBlockMinutes:
       mission.durationMinutes + rotationExtensionMinutes + OPERATIONAL_BUFFER_MINUTES,
     squadCount,
-    rotationsRequired: normalizedPlayers > MAX_CONCURRENT_PLAYERS,
+    rotationsRequired: normalizedPlayers > mission.maxConcurrentPlayers,
     totalPrice,
     currency: mission.currency
   };
@@ -63,26 +63,26 @@ export function formatTime(time: string) {
   return `${displayHour}:${minute} ${suffix}`;
 }
 
-export function buildDateChoices(count = 10) {
-  const dates: Array<{ value: string; weekday: string; day: string; month: string }> = [];
-  const now = new Date();
-
-  for (let offset = 1; offset <= count; offset += 1) {
-    const date = new Date(now);
-    date.setDate(now.getDate() + offset);
-    dates.push({
-      value: date.toISOString().slice(0, 10),
-      weekday: new Intl.DateTimeFormat('en', { weekday: 'short' }).format(date),
-      day: new Intl.DateTimeFormat('en', { day: '2-digit' }).format(date),
-      month: new Intl.DateTimeFormat('en', { month: 'short' }).format(date)
-    });
-  }
-
-  return dates;
+export function buildDateChoices(count = 10, now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/St_Lucia', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(now);
+  const part = (type: string) => parts.find((value) => value.type === type)!.value;
+  const today = new Date(`${part('year')}-${part('month')}-${part('day')}T12:00:00Z`);
+  return Array.from({ length: count }, (_, offset) => {
+    const date = new Date(today);
+    date.setUTCDate(today.getUTCDate() + offset + 1);
+    const format = (options: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat('en', { ...options, timeZone: 'UTC' }).format(date);
+    return { value: date.toISOString().slice(0, 10), weekday: format({ weekday: 'short' }),
+      day: format({ day: '2-digit' }), month: format({ month: 'short' }) };
+  });
 }
 
-export function isDemoSlotUnavailable(date: string, time: string) {
-  if (!date) return false;
-  const day = Number(date.slice(-2));
-  return (day + Number(time.slice(0, 2))) % 7 === 0;
+export function validCustomer(customer: CustomerProfile) {
+  return customer.fullName.trim().length >= 2 && customer.fullName.length <= 120 &&
+    customer.email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email.trim()) &&
+    /^[+\d\s().-]+$/.test(customer.phone) &&
+    customer.phone.replace(/\D/g, '').length >= 7 &&
+    customer.phone.replace(/\D/g, '').length <= 15;
 }

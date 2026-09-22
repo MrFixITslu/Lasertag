@@ -1,5 +1,7 @@
 # Laser Tag Booking Experience
 
+**Launch status: preview only. Real bookings and payments are unavailable.** See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for verified fixes and remaining blockers.
+
 Tactical, mobile-first booking experience for the Saint Lucia laser tag business.
 
 ## V1 product goals
@@ -26,7 +28,7 @@ Package durations in the initial UI are configurable data and should be checked 
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

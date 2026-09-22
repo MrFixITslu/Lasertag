@@ -92,7 +92,7 @@ export const missions: MissionPackage[] = [
     pricingMode: 'per_participant',
     price: 20,
     currency: 'XCD',
-    durationMinutes: 60,
+    durationMinutes: 15,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
     description: 'Mobile laser tag for community events, festivals, and open-play activations.',
