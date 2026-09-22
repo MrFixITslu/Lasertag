@@ -6,7 +6,7 @@ export interface PaymentRequest {
 }
 
 export interface PaymentResult {
-  status: 'demo_approved' | 'requires_provider';
+  status: 'requires_provider';
   transactionId?: string;
 }
 
@@ -15,17 +15,14 @@ export interface PaymentProvider {
 }
 
 /**
- * Development provider only.
+ * Unavailable provider: fail closed until live processing is implemented.
  *
  * Replace this implementation with the selected Caribbean payment gateway.
  * The booking UI should depend on this interface rather than a vendor-specific SDK.
  */
 export const demoPaymentProvider: PaymentProvider = {
   async createPayment(request) {
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    return {
-      status: 'demo_approved',
-      transactionId: `DEMO-${request.bookingReference}`
-    };
+    void request;
+    return { status: 'requires_provider' };
   }
 };

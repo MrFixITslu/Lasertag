@@ -31,13 +31,12 @@ import {
   fixedStartTimes,
   formatDuration,
   formatTime,
-  isDemoSlotUnavailable,
+  validCustomer,
   MIN_PLAYERS
 } from './lib/booking';
-import { demoPaymentProvider } from './lib/payment';
 import type { BookingDraft, MissionPackage } from './types';
 
-type BookingStage = 'mission' | 'squad' | 'deployment' | 'account' | 'review' | 'confirmed';
+type BookingStage = 'mission' | 'squad' | 'deployment' | 'account' | 'review';
 type MissionFilter = 'instant' | 'request';
 
 const stageOrder: BookingStage[] = ['mission', 'squad', 'deployment', 'account', 'review'];
@@ -66,7 +65,7 @@ const initialDraft: BookingDraft = {
     fullName: '',
     email: '',
     phone: '',
-    marketingOptIn: true
+    marketingOptIn: false
   }
 };
 
@@ -85,9 +84,8 @@ function App() {
   const [stage, setStage] = useState<BookingStage>('mission');
   const [filter, setFilter] = useState<MissionFilter>('instant');
   const [draft, setDraft] = useState<BookingDraft>(initialDraft);
-  const [submitting, setSubmitting] = useState(false);
-  const [confirmationRef, setConfirmationRef] = useState('');
-  const [paymentReference, setPaymentReference] = useState('');
+  const submitting = false;
+  const [submitError, setSubmitError] = useState('');
 
   const selectedMission = getMission(draft.missionId);
   const dates = useMemo(() => buildDateChoices(12), []);
@@ -136,58 +134,10 @@ function App() {
     Boolean(draft.area.trim()) &&
     Boolean(draft.address.trim());
 
-  const accountComplete =
-    Boolean(draft.customer.fullName.trim()) &&
-    Boolean(draft.customer.email.trim()) &&
-    Boolean(draft.customer.phone.trim());
+  const accountComplete = validCustomer(draft.customer);
 
-  const finalizeMission = async () => {
-    if (!selectedMission || !summary) return;
-
-    setSubmitting(true);
-    const ref = `LT-${Date.now().toString().slice(-8)}`;
-
-    try {
-      if (selectedMission.bookingMode === 'instant') {
-        const payment = await demoPaymentProvider.createPayment({
-          amount: summary.totalPrice,
-          currency: summary.currency,
-          bookingReference: ref,
-          customerEmail: draft.customer.email
-        });
-        setPaymentReference(payment.transactionId || '');
-      }
-
-      const demoCustomer = {
-        ...draft.customer,
-        createdAt: new Date().toISOString()
-      };
-      const demoBooking = {
-        reference: ref,
-        draft,
-        mission: selectedMission.name,
-        summary,
-        status: selectedMission.bookingMode === 'instant' ? 'demo_paid' : 'request_received',
-        createdAt: new Date().toISOString()
-      };
-
-      localStorage.setItem('lasertag.demo.customer', JSON.stringify(demoCustomer));
-      localStorage.setItem('lasertag.demo.latestBooking', JSON.stringify(demoBooking));
-
-      setConfirmationRef(ref);
-      setStage('confirmed');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const restart = () => {
-    setDraft(initialDraft);
-    setConfirmationRef('');
-    setPaymentReference('');
-    setFilter('instant');
-    setStage('mission');
+  const finalizeMission = () => {
+    setSubmitError('Online booking is not open yet. No request has been sent, no slot reserved and no payment taken.');
   };
 
   return (
@@ -211,7 +161,7 @@ function App() {
         </div>
       </header>
 
-      {stage !== 'confirmed' && (
+      {(
         <nav className="mission-progress" aria-label="Booking progress">
           {stageLabels.map((label, index) => {
             const isComplete = currentStep > index;
@@ -219,6 +169,7 @@ function App() {
             return (
               <div
                 key={label}
+                aria-current={isActive ? "step" : undefined}
                 className={`progress-step ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
               >
                 <div className="progress-node">
@@ -232,6 +183,8 @@ function App() {
       )}
 
       <main className="page-frame">
+        <p className="demo-note" role="status">Booking preview — prices and timings are provisional. Online reservations and payments are not yet available.</p>
+        {submitError && <p className="prototype-warning" role="alert">{submitError}</p>}
         {stage === 'mission' && (
           <MissionSelect
             filter={filter}
@@ -286,16 +239,6 @@ function App() {
           />
         )}
 
-        {stage === 'confirmed' && selectedMission && summary && (
-          <Confirmation
-            mission={selectedMission}
-            draft={draft}
-            summary={summary}
-            reference={confirmationRef}
-            paymentReference={paymentReference}
-            onRestart={restart}
-          />
-        )}
       </main>
 
       <footer className="footer">
@@ -367,7 +310,7 @@ function MissionSelect({
           type="button"
         >
           <Zap size={16} />
-          BOOK NOW
+          EXPLORE PACKAGES
           <small>Public, birthdays & events</small>
         </button>
         <button
@@ -412,7 +355,7 @@ function MissionSelect({
             <div className="mission-card-footer">
               <div>
                 <span className="meta-label">
-                  {mission.pricingMode === 'per_participant' ? 'PER PLAYER' : mission.bookingMode === 'request' ? 'FROM' : 'MISSION TOTAL'}
+                  {mission.pricingMode === 'per_participant' ? 'PER PLAYER' : mission.bookingMode === 'request' ? 'FROM' : 'ESTIMATED TOTAL'}
                 </span>
                 <strong>{money(mission.price, mission.currency)}</strong>
               </div>
@@ -606,7 +549,7 @@ function DeploymentStep({
       <StageHeading
         number="03"
         eyebrow="DEPLOYMENT WINDOW"
-        title="LOCK DATE & LOCATION."
+        title="CHOOSE DATE & LOCATION."
         text="Choose a fixed start window, then tell us where the mobile arena needs to deploy."
       />
 
@@ -638,7 +581,7 @@ function DeploymentStep({
         </div>
         <div className="time-grid">
           {fixedStartTimes.map((time) => {
-            const unavailable = isDemoSlotUnavailable(draft.date, time);
+            const unavailable = false;
             return (
               <button
                 key={time}
@@ -648,13 +591,13 @@ function DeploymentStep({
                 onClick={() => updateDraft('time', time)}
               >
                 <span>{formatTime(time)}</span>
-                <small>{unavailable ? 'LOCKED' : 'AVAILABLE'}</small>
+                <small>PREFERRED TIME</small>
               </button>
             );
           })}
         </div>
         <p className="demo-note">
-          Availability is simulated in this prototype. Production slots will come from the booking calendar and travel rules.
+          All times are Saint Lucia time (AST, UTC−4). This is a preferred time only; availability is not confirmed.
         </p>
       </div>
 
@@ -681,6 +624,7 @@ function DeploymentStep({
           <label>
             <span>Town / Area</span>
             <input
+              maxLength={100}
               value={draft.area}
               onChange={(event) => updateDraft('area', event.target.value)}
               placeholder="e.g. Gros Islet, Castries, Soufrière"
@@ -689,6 +633,7 @@ function DeploymentStep({
           <label>
             <span>Venue / Address</span>
             <input
+              maxLength={500}
               value={draft.address}
               onChange={(event) => updateDraft('address', event.target.value)}
               placeholder="Venue name, street, landmark or directions"
@@ -698,7 +643,7 @@ function DeploymentStep({
             <MapPin size={16} />
             <div>
               <strong>ISLAND-WIDE SERVICE AREA</strong>
-              <span>Travel-time pricing and buffers can be connected later.</span>
+              <span>Travel charges and venue suitability require operator confirmation.</span>
             </div>
           </div>
         </div>
@@ -727,6 +672,8 @@ function DeploymentStep({
       <div className="hud-panel section-block form-stack">
         <div className="panel-label">MISSION NOTES — OPTIONAL</div>
         <textarea
+          aria-label="Mission notes"
+          maxLength={2000}
           rows={3}
           value={draft.notes}
           onChange={(event) => updateDraft('notes', event.target.value)}
@@ -773,8 +720,8 @@ function AccountStep({
       <StageHeading
         number="04"
         eyebrow="OPERATOR PROFILE"
-        title="CREATE YOUR CALL SIGN."
-        text="Your lightweight customer profile will become the home for bookings, rescheduling, loyalty rewards, and future mission history."
+        title="YOUR CONTACT DETAILS."
+        text="Enter contact details to preview your booking summary. No account is created."
       />
 
       <form
@@ -787,8 +734,8 @@ function AccountStep({
         <div className="account-banner">
           <ShieldCheck size={24} />
           <div>
-            <strong>LOYALTY-READY ACCOUNT</strong>
-            <span>No password is stored in this prototype. Production authentication will use a secure identity service.</span>
+            <strong>CONTACT DETAILS</strong>
+            <span>Details remain in this page until you close or reload it. They are not submitted or saved.</span>
           </div>
         </div>
 
@@ -797,6 +744,8 @@ function AccountStep({
           <input
             value={draft.customer.fullName}
             onChange={(event) => updateCustomer('fullName', event.target.value)}
+            required
+            maxLength={120}
             autoComplete="name"
             placeholder="Mission operator name"
           />
@@ -808,6 +757,8 @@ function AccountStep({
             type="email"
             value={draft.customer.email}
             onChange={(event) => updateCustomer('email', event.target.value)}
+            required
+            maxLength={254}
             autoComplete="email"
             placeholder="you@example.com"
           />
@@ -819,6 +770,8 @@ function AccountStep({
             type="tel"
             value={draft.customer.phone}
             onChange={(event) => updateCustomer('phone', event.target.value)}
+            required
+            maxLength={30}
             autoComplete="tel"
             placeholder="+1 758 ..."
           />
@@ -870,8 +823,8 @@ function ReviewStep({
         title="CONFIRM THE OPERATION."
         text={
           mission.bookingMode === 'instant'
-            ? 'Review the mission brief. Instant missions require full payment to secure the deployment window.'
-            : 'Review the mission brief. Corporate and resort operations are sent to Mission Control for customization.'
+            ? 'Review the mission brief. Prices are estimates; no payment or reservation can be made yet.'
+            : 'Review the mission brief. Corporate and resort operations require a confirmed quotation; online submission is not available yet.'
         }
       />
 
@@ -907,7 +860,7 @@ function ReviewStep({
           )}
 
           <div className="brief-total">
-            <span>{mission.bookingMode === 'instant' ? 'MISSION TOTAL' : 'WORKING ESTIMATE'}</span>
+            <span>{mission.bookingMode === 'instant' ? 'ESTIMATED TOTAL' : 'WORKING ESTIMATE'}</span>
             <strong>{money(summary.totalPrice, summary.currency)}</strong>
             {mission.bookingMode === 'request' && <small>Final scope confirmed by Mission Control.</small>}
           </div>
@@ -917,13 +870,13 @@ function ReviewStep({
           {mission.bookingMode === 'instant' ? (
             <>
               <div className="checkout-icon"><CreditCard size={28} /></div>
-              <div className="panel-label">FULL PAYMENT REQUIRED</div>
-              <h3>SECURE THE SLOT</h3>
+              <div className="panel-label">PAYMENT UNAVAILABLE</div>
+              <h3>PREVIEW ONLY</h3>
               <p>
-                The production build will hand this total to the selected Caribbean payment gateway. The current prototype uses a demo provider only.
+                Online payment is not connected. This preview cannot reserve a slot or charge you.
               </p>
               <div className="payment-total">
-                <span>PAY NOW</span>
+                <span>ESTIMATED TOTAL</span>
                 <strong>{money(summary.totalPrice, summary.currency)}</strong>
               </div>
               <button
@@ -933,7 +886,7 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <WalletCards size={18} />
-                {submitting ? 'AUTHORIZING…' : 'DEMO: PAY IN FULL & LOCK MISSION'}
+                {submitting ? 'AUTHORIZING…' : 'ONLINE PAYMENT NOT AVAILABLE'}
               </button>
               <small className="prototype-warning">
                 No real card details are collected or charged in this prototype.
@@ -943,7 +896,7 @@ function ReviewStep({
             <>
               <div className="checkout-icon"><ShieldCheck size={28} /></div>
               <div className="panel-label">CUSTOM OPERATION</div>
-              <h3>SEND TO MISSION CONTROL</h3>
+              <h3>REQUEST PREVIEW</h3>
               <p>
                 Corporate and resort deployments need a final operational review before payment and confirmation.
               </p>
@@ -954,7 +907,7 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <Radar size={18} />
-                {submitting ? 'TRANSMITTING…' : 'REQUEST THIS MISSION'}
+                {submitting ? 'TRANSMITTING…' : 'ONLINE REQUESTS NOT AVAILABLE'}
               </button>
             </>
           )}
@@ -962,61 +915,6 @@ function ReviewStep({
       </div>
 
       <NavActions onBack={onBack} hideNext />
-    </section>
-  );
-}
-
-function Confirmation({
-  mission,
-  draft,
-  summary,
-  reference,
-  paymentReference,
-  onRestart
-}: {
-  mission: MissionPackage;
-  draft: BookingDraft;
-  summary: ReturnType<typeof calculateBookingSummary>;
-  reference: string;
-  paymentReference: string;
-  onRestart: () => void;
-}) {
-  return (
-    <section className="confirmation-screen">
-      <div className="confirmation-radar">
-        <div className="confirm-pulse" />
-        <BadgeCheck size={55} />
-      </div>
-
-      <div className="eyebrow">
-        <span className="status-dot" />
-        {mission.bookingMode === 'instant' ? 'DEMO PAYMENT VERIFIED' : 'REQUEST TRANSMITTED'}
-      </div>
-
-      <h1>
-        {mission.bookingMode === 'instant' ? 'MISSION LOCKED.' : 'BRIEF RECEIVED.'}
-      </h1>
-
-      <p>
-        {mission.bookingMode === 'instant'
-          ? 'Your prototype booking has been secured locally. Connect the live payment and scheduling services before accepting real bookings.'
-          : 'Mission Control has your prototype request. Production will send this request to the operations dashboard for review.'}
-      </p>
-
-      <div className="confirmation-card">
-        <BriefRow label="Reference" value={reference} />
-        <BriefRow label="Operation" value={mission.name} />
-        <BriefRow label="Squad" value={`${draft.players} players`} />
-        <BriefRow label="Deployment" value={`${draft.date} // ${formatTime(draft.time)}`} />
-        <BriefRow label="Area" value={draft.area} />
-        <BriefRow label="Mission time" value={formatDuration(summary.totalMissionMinutes)} />
-        {paymentReference && <BriefRow label="Demo payment" value={paymentReference} />}
-      </div>
-
-      <button className="primary-action restart-action" type="button" onClick={onRestart}>
-        <Crosshair size={18} />
-        BUILD ANOTHER MISSION
-      </button>
     </section>
   );
 }
@@ -1068,7 +966,7 @@ function MissionMetrics({
         <strong>+{formatDuration(summary.operationalBufferMinutes)}</strong>
       </div>
       <div>
-        <span>{mission.bookingMode === 'request' ? 'WORKING ESTIMATE' : 'MISSION TOTAL'}</span>
+        <span>{mission.bookingMode === 'request' ? 'WORKING ESTIMATE' : 'ESTIMATED TOTAL'}</span>
         <strong>{money(summary.totalPrice, summary.currency)}</strong>
       </div>
     </div>
