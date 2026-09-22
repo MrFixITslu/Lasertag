@@ -1,0 +1,111 @@
+/* Booking keeps its responsive layouts and uses the landing page's field-manual style. */
+.app-shell {
+  background: radial-gradient(ellipse at top right, #35422438, transparent 55%), var(--cz-ink);
+}
+.app-shell .tactical-backdrop { z-index: -1; }
+.app-shell .topbar {
+  position: relative;
+  top: auto;
+  width: min(1320px, 90%);
+  margin: 0 auto;
+  padding: 26px 0;
+  border: 0;
+  border-bottom: 1px solid var(--cz-edge);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.app-shell .brand-lockup { gap: 11px; }
+.app-shell .status-chip {
+  border-radius: 0;
+  border-color: var(--cz-edge);
+  color: var(--cz-muted);
+  padding: 12px;
+  font: 9px var(--cz-label-font);
+}
+.app-shell .status-dot { width: 6px; height: 6px; border-radius: 0; animation: none; }
+.app-shell .page-frame { width: min(1180px, 90%); margin-top: 35px; }
+.app-shell .mission-progress { margin-top: 30px; }
+.app-shell .progress-node { border-radius: 0; background: var(--cz-surface); border-color: var(--cz-edge); color: var(--cz-muted); }
+.app-shell .progress-step { color: var(--cz-muted); font-family: var(--cz-label-font); }
+.app-shell .progress-step.active { color: var(--cz-accent); }
+.app-shell .progress-step.active .progress-node { color: #1e290d; background: var(--cz-accent); border-color: var(--cz-accent); box-shadow: none; }
+.app-shell .progress-step.complete .progress-node { color: var(--cz-accent); border-color: var(--cz-accent-edge); }
+.app-shell :is(h1, .mission-card h2, .brief-title h2, .checkout-panel h3) {
+  font-family: var(--cz-display-font);
+  font-stretch: condensed;
+  font-weight: 900;
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+}
+.app-shell .hero-copy h1 { font-size: clamp(50px, 7vw, 92px); line-height: .98; }
+.app-shell .hero-copy h1 span { text-shadow: none; }
+.app-shell .stage-heading h1 { line-height: 1.05; }
+.app-shell :is(.eyebrow, .panel-label, .meta-label, .call-sign, .tag-row span) { font-family: var(--cz-label-font); }
+.app-shell .stage-number { color: var(--cz-accent); opacity: .45; }
+.app-shell :is(.hero-copy p, .stage-heading p, .mission-card > p, .checkout-panel p) { color: var(--cz-muted); }
+.app-shell :is(.mode-toggle, .mission-card, .hud-panel, .intel-strip, .mission-metrics, .mission-brief, .confirmation-card) {
+  border-radius: 0;
+  border-color: var(--cz-edge);
+  background: var(--cz-surface);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.app-shell :is(.mission-card, .hud-panel, .mission-brief) {
+  background: radial-gradient(ellipse at top right, #35422445, transparent 65%), var(--cz-surface);
+}
+.app-shell .mission-card { border-top: 2px solid var(--cz-edge); }
+.app-shell .mission-card:hover { border-color: var(--cz-accent); background: var(--cz-surface-raised); }
+.app-shell .mission-card h2 { font-size: 30px; line-height: 1.1; }
+.app-shell .mission-card :is(.call-sign, .tag-row span) { border-radius: 0; }
+.app-shell .call-sign { padding: 6px 8px; }
+.app-shell .mode-toggle { padding: 0; gap: 0; }
+.app-shell .mode-toggle button { border-radius: 0; color: var(--cz-muted); padding: 18px; }
+.app-shell .mode-toggle button.active { color: #1e290d; box-shadow: none; }
+.app-shell .mode-toggle button small { color: var(--cz-muted); }
+.app-shell .mode-toggle button.active small { color: #35451b; }
+.app-shell :is(.primary-action, .secondary-action) { border-radius: 0; min-height: 52px; font-family: var(--cz-label-font); }
+.app-shell .primary-action { border-right: 5px solid var(--cz-accent-edge); box-shadow: none; color: #1e290d; }
+.app-shell .secondary-action { border-color: #839365; background: transparent; color: var(--cz-paper); }
+.app-shell :is(.primary-action, .secondary-action):disabled { opacity: .45; cursor: not-allowed; }
+.app-shell :is(.player-counter button, .quick-counts button, .date-tile, .time-slot, .venue-card, input, textarea, .squad-row, .operator, .checkbox-box, .payment-total, .checkout-icon, .rotation-rule, .rotation-status, .island-service, .account-banner, .brief-alert) { border-radius: 0; }
+.app-shell :is(.date-tile, .time-slot, .venue-card, .quick-counts button, .player-counter button) { border-color: var(--cz-edge); background: #0e130d; }
+.app-shell :is(.date-tile.active, .time-slot.active, .venue-card.active, .quick-counts button.active) { background: var(--cz-accent); color: #1e290d; border-color: var(--cz-accent); box-shadow: none; }
+.app-shell :is(.date-tile.active span, .date-tile.active small, .time-slot.active small) { color: #35451b; }
+.app-shell :is(input, textarea) { background: var(--cz-ink); border-color: #657449; font-size: 16px; color: var(--cz-paper); }
+.app-shell :is(input, textarea)::placeholder { color: #97a585; }
+.app-shell :is(.venue-card, .quick-counts button, .tag-row span, .meta-label, .intel-strip span, .mission-metrics span, .date-tile span, .date-tile small, .panel-hint, .time-slot small, .form-stack label > span, .account-form label > span, .account-banner span, .island-service span, .weather-copy p, .brief-header span, .brief-title small, .brief-row span, .brief-total span, .brief-total small, .payment-total span, .squad-name span, .squad-count, .rotation-status span) { color: var(--cz-muted); }
+/* Selected controls must keep dark text after the shared secondary-text rule above. */
+.app-shell :is(.venue-card.active, .quick-counts button.active, .date-tile.active span, .date-tile.active small, .time-slot.active small) { color: #1e290d; }
+.app-shell .tactical-checkbox > span:last-child { color: var(--cz-muted) !important; }
+.app-shell .tactical-checkbox input:focus-visible + .checkbox-box { outline: 3px solid var(--cz-accent); outline-offset: 4px; }
+.app-shell .hud-corners::before { border-top-left-radius: 0; }
+.app-shell .hud-corners::after { border-bottom-right-radius: 0; }
+.app-shell .page-frame > .demo-note {
+  margin: 0 0 26px;
+  padding: 13px 16px;
+  border-left: 2px solid var(--cz-accent);
+  background: var(--cz-surface);
+  color: var(--cz-muted);
+  font: 11px/1.8 var(--cz-label-font);
+}
+.app-shell .demo-note { color: var(--cz-muted); font-size: 11px; line-height: 1.7; }
+.app-shell .prototype-warning { color: var(--amber); font-size: 12px; line-height: 1.7; }
+.app-shell .footer { width: min(1180px, 90%); border-color: var(--cz-edge); color: var(--cz-muted); font-family: var(--cz-label-font); line-height: 1.8; }
+.app-shell a:focus-visible { outline: 3px solid var(--cz-accent); outline-offset: 5px; }
+@media (max-width: 680px) {
+  .app-shell .topbar { width: 88%; padding: 21px 0; }
+  .app-shell .brand-lockup { gap: 8px; }
+  .app-shell :is(.page-frame, .footer) { width: 88%; }
+  .app-shell .mission-progress { width: 88%; }
+  .app-shell .progress-step span { display: block; font-size: 7px; letter-spacing: 0; }
+  .app-shell .hero-reticle { display: none; }
+  .app-shell .stage-heading h1 { font-size: clamp(32px, 7.5vw, 44px); overflow-wrap: anywhere; }
+  .app-shell .hero-copy h1 { font-size: clamp(43px, 10vw, 65px); }
+  .app-shell .mission-card h2 { font-size: 26px; }
+  .app-shell .mode-toggle button { min-height: 72px; }
+  .app-shell .nav-actions { flex-wrap: wrap; }
+  .app-shell .nav-actions > button { flex: 1 1 auto; }
+  .app-shell .player-counter { gap: 10px; }
+}
