@@ -17,7 +17,7 @@ Updated for persistent booking requests and `/admin`.
   private notes, activity history and stale-update protection.
 - Transactional confirmed-event conflict checks including the operating buffer.
 - Shared combat theme and responsive admin layout; accessible labels and errors.
-- Non-root Node service on port 8080, no host port exposure, external proxy_network
+- Non-root Node service on port 5173, no host port exposure, external proxy_network
   only, read-only root filesystem, persistent writable data volume, health check.
 
 ## Verified automatically
