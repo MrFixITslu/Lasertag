@@ -27,7 +27,7 @@ communication are the operator's responsibility.
 ## Deploy on your server
 
 **Migration from the old static container:** Nginx Proxy Manager must now forward
-to **`lasertag:8080`**, replacing port 80. The only Docker network remains the
+to **`lasertag:5173`**, with Nginx accepting public HTTP traffic on port 80. The only Docker network remains the
 existing external **`proxy_network`**. No host ports are published.
 
 After merging and pulling the change:
@@ -61,7 +61,7 @@ Nginx Proxy Manager must be on the same `proxy_network`. Set the Proxy Host:
 | Domain | `combatzone.v79sl.com` |
 | Scheme | `http` |
 | Forward hostname | `lasertag` |
-| Forward port | `8080` |
+| Forward port | `5173` |
 | SSL | Select/request your certificate; enable Force SSL |
 
 Visit `https://combatzone.v79sl.com/admin` and sign in with the `.env` credentials.
@@ -71,7 +71,7 @@ other proxy layer, review the trust configuration before deploying.
 
 ```bash
 docker compose ps
-docker compose exec lasertag node -e "fetch('http://127.0.0.1:8080/health').then(async r=>console.log(r.status,await r.text()))"
+docker compose exec lasertag node -e "fetch('http://127.0.0.1:5173/health').then(async r=>console.log(r.status,await r.text()))"
 docker inspect lasertag --format '{{json .NetworkSettings.Networks}}'
 ```
 
