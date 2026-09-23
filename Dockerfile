@@ -9,7 +9,7 @@ FROM node:24-alpine
 ENV NODE_ENV=production PORT=5173 DATABASE_PATH=/app/data/bookings.sqlite
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force && mkdir -p /app/data && chown node:node /app/data
+RUN apk add --no-cache ffmpeg && npm ci --omit=dev && npm cache clean --force && mkdir -p /app/data && chown node:node /app/data
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY scripts/backup.mjs ./scripts/backup.mjs

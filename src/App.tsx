@@ -1,3 +1,4 @@
+import { visitId, campaignId } from './lib/analytics';
 import { api } from './lib/api';
 import Brand from './Brand';
 import Landing from './Landing';
@@ -169,7 +170,7 @@ function BookingApp() {
 
   const finalizeMission = async () => {
     if (inFlight.current || !selectedMission || !deploymentComplete || !accountComplete) return;
-    const body = JSON.stringify(draft);
+    const body = JSON.stringify({...draft,visitId:visitId(),campaignId:campaignId()});
     if (!request.current || request.current.body !== body) request.current = { body, key: crypto.randomUUID() };
     inFlight.current = true; setSubmitting(true); setSubmitError('');
     try {

@@ -142,3 +142,9 @@ npm test
 
 See `PRODUCTION_READINESS.md` for the verification scope and remaining limits.
 See `LANDING-MEDIA.md` for media attribution and playback behaviour.
+
+## Business workspace, marketing and KPIs
+
+The `/admin` workspace now includes staff accounts and finance grants, a payment/refund ledger, Campaign Lab, public events, email audiences/campaigns, official social publishing adapters and a role-aware KPI dashboard. See [MARKETING_SETUP.md](MARKETING_SETUP.md) for permissions, KPI definitions, connection requirements, limitations, media backup and deployment instructions.
+
+The studio needs FFmpeg (included in Docker). Existing online database backups do not include uploaded media; back up `/app/data/media` as well. SMTP and social credentials are optional, server-side configuration. Without them, bookings, income, design exports, events and internal KPIs work, but external sends/publishing remain disabled.

@@ -8,6 +8,10 @@ server {
 
     server_name combatzone.v79sl.com;
 
+    client_max_body_size 85m;
+    proxy_read_timeout 180s;
+    proxy_send_timeout 180s;
+
     location / {
         proxy_pass http://lasertag:5173;
         proxy_http_version 1.1;
