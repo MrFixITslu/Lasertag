@@ -8,13 +8,13 @@ services:
     init: true
     environment:
       NODE_ENV: production
-      PORT: "8080"
+      PORT: "5173"
       DATABASE_PATH: /app/data/bookings.sqlite
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in .env}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in .env}
     expose:
-      - "8080"
+      - "5173"
     volumes:
       - booking_data:/app/data
     networks:
