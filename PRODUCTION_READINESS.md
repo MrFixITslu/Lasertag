@@ -1,32 +1,54 @@
-# Production readiness review
+# Operational scope and verification
 
-Status: NOT ready to accept real bookings or payments.
-Base reviewed: ad699f3841c6a66c1926bde2665173019ab393f7.
+Updated for persistent booking requests and `/admin`.
 
-## Fixed in this change
+## Implemented
 
-- Removed simulated payment success and false request/booking confirmations. Submission now fails closed with an explicit message; no payment or reservation is claimed.
-- Removed browser-local persistence of customer contact details and default marketing consent.
-- Removed fabricated availability. Date and time selection now represents preference only.
-- Corrected calendar dates to America/St_Lucia, including UTC-midnight/year rollover.
-- Validated email and phone before progression; bounded free-text fields and player calculations.
-- Calculation uses package-specific minimum/capacity and integer minor-unit pricing.
-- Added keyboard focus styling, current-step semantics and notes input label.
-- Added a dependency lockfile, deterministic Docker/CI installs and patched Vitest tooling.
-- Added Nginx security headers, hidden-file protection, missing API 404s, and noncached HTML.
+- Server-validated customer submissions with server-calculated prices and timing;
+  stored mission/price snapshots preserve the request's original estimate.
+- SQLite persistence on a dedicated Docker volume, WAL mode and online backups.
+- Customer reference receipt, retry deduplication, bounded input sizes, public
+  request rate limiting and no unauthenticated booking-list/detail endpoint.
+- Admin password hashing for verification, random server-side session tokens
+  stored only as hashes, HttpOnly/SameSite cookies, HTTPS-only production cookies,
+  eight-hour expiry, logout/restart revocation, login throttling, Origin validation
+  and CSRF validation for authenticated writes.
+- Search, status/date filtering, pagination, details, status updates, rescheduling,
+  private notes, activity history and stale-update protection.
+- Transactional confirmed-event conflict checks including the operating buffer.
+- Shared combat theme and responsive admin layout; accessible labels and errors.
+- Non-root Node service on port 8080, no host port exposure, external proxy_network
+  only, read-only root filesystem, persistent writable data volume, health check.
 
-## Remaining launch blockers
+## Verified automatically
 
-1. Persistent backend: bookings, customer records, authenticated operator dashboard and audit history do not exist. Implement authoritative server validation and pricing, durable storage, access controls, rate limits, idempotency, and backup/restore verification.
-2. Real scheduling: implement server-controlled availability with atomic conflict prevention, expiring payment holds, equipment capacity, setup/teardown and travel constraints. Current times are preferences, not availability.
-3. Payment gateway: select a merchant provider supporting the business, configure secrets server-side, verify signed webhooks, and test success, decline, timeout, duplicate webhook, refund and reconciliation paths. Never confirm from a browser redirect alone.
-4. Customer/operations communication: configure delivery and retry handling for confirmations, requests and cancellations. No request is currently sent anywhere.
-5. Commercial approval: approve prices, package duration, inclusions, maximum attendance, rotation charges, taxes, travel charges, operating end times, safety/age requirements, privacy notice, cancellation/refund and weather policies. The current one-hour buffer is a total buffer; clarify whether the business intends one hour on each side before changing its calculation.
-6. Deployment verification: validate Docker/Nginx configuration and container image vulnerabilities in the target runtime; verify TLS, monitoring and health checks on the actual server. Browser visual/end-to-end QA could not run because the managed browser rejected the preview connection.
+Production frontend/server builds and existing calculation tests. API integration
+tests cover authentication, secure cookies, login throttling, origin/CSRF checks,
+logout revocation, server-side validation, price tampering, 15-minute community
+base time, retry deduplication, customer-data access, restart persistence,
+conflicting confirmations, optimistic concurrency, rescheduling, cancellation,
+future-event completion rejection and activity history.
 
-The private Sites deployment is a static preview only. It does not create the missing backend or connect the user's production server.
+The built server was smoke-tested for `/`, `/admin`, `/admin/`, health and private
+API access. The online backup command produced a database passing SQLite integrity
+checks. The production dependency audit reported zero known vulnerabilities at the
+time of this change; the Compose YAML was checked for the single external network,
+private port and persistent volume.
 
-## Verification
+## Not included / deployment checks still required
 
-Run `npm ci`, `npm test`, `npm run build`, and `npm audit --audit-level=moderate`.
-Regression tests cover player rotations, minimums, fixed/per-person pricing, finite bounds, contact validation and Saint Lucia date boundaries.
+- No online payments, refunds, invoices or automatic customer emails. Admin changes
+  must be communicated to customers separately. Pending is not a reservation.
+- One configured admin account; no multi-user roles, MFA or self-service password
+  reset. Rotate credentials through server configuration.
+- One mobile operation: no multi-fleet resource allocation or travel routing.
+- No automatic deletion/retention policy or customer portal. Set an appropriate
+  business retention process for stored customer details and backups.
+- Live Docker/Nginx Proxy Manager/TLS deployment, browser visual checks and full
+  browser interactions must be checked on the user's server. The available cloud
+  browser cannot access the local development preview; Docker is unavailable here.
+- Perform a restore drill using the documented backup procedure and a separate
+  volume before relying on the production backup routine.
+
+Package pricing, rotation rules, venue suitability and timings require the
+operator's commercial approval; this implementation does not certify them.

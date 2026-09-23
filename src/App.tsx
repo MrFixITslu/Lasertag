@@ -1,6 +1,7 @@
+import { api } from './lib/api';
 import Brand from './Brand';
 import Landing from './Landing';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BadgeCheck,
   Building2,
@@ -82,7 +83,14 @@ function getMission(id: string) {
   return missions.find((mission) => mission.id === id);
 }
 
+const Admin = lazy(() => import('./Admin'));
 function App() {
+  return /^\/admin\/?$/.test(window.location.pathname)
+    ? <Suspense fallback={<p role="status">Loading booking control…</p>}><Admin /></Suspense>
+    : <PublicApp />;
+}
+
+function PublicApp() {
   const [booking, setBooking] = useState(() => window.location.hash === '#booking');
   useEffect(() => {
     const navigate = () => {
@@ -104,7 +112,10 @@ function BookingApp() {
   const [stage, setStage] = useState<BookingStage>('mission');
   const [filter, setFilter] = useState<MissionFilter>('instant');
   const [draft, setDraft] = useState<BookingDraft>(initialDraft);
-  const submitting = false;
+  const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
+  const request = useRef<{ body: string; key: string } | null>(null);
+  const [receipt, setReceipt] = useState('');
   const [submitError, setSubmitError] = useState('');
 
   const selectedMission = getMission(draft.missionId);
@@ -156,9 +167,30 @@ function BookingApp() {
 
   const accountComplete = validCustomer(draft.customer);
 
-  const finalizeMission = () => {
-    setSubmitError('Online booking is not open yet. No request has been sent, no slot reserved and no payment taken.');
+  const finalizeMission = async () => {
+    if (inFlight.current || !selectedMission || !deploymentComplete || !accountComplete) return;
+    const body = JSON.stringify(draft);
+    if (!request.current || request.current.body !== body) request.current = { body, key: crypto.randomUUID() };
+    inFlight.current = true; setSubmitting(true); setSubmitError('');
+    try {
+      const result = await api<{ reference: string }>('/api/bookings', {
+        method: 'POST', headers: { 'Idempotency-Key': request.current.key }, body
+      });
+      setReceipt(result.reference);
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } catch (error) { setSubmitError(error instanceof Error ? error.message : 'Could not send your request. Please try again.'); }
+    finally { inFlight.current = false; setSubmitting(false); }
   };
+
+  if (receipt) return (
+    <div className="app-shell"><header className="topbar"><Brand /></header>
+      <main className="page-frame"><section className="hud-panel account-form narrow-panel" role="status">
+        <BadgeCheck size={40} /><p className="eyebrow">REQUEST RECEIVED / PENDING REVIEW</p>
+        <h1>YOUR MISSION IS IN.</h1><p>Your reference: <strong>{receipt}</strong></p>
+        <p>Your request has been saved for our team to review. Your slot is not yet confirmed and no payment has been taken. Keep this reference; our team will contact you using the details you supplied.</p>
+        <a className="primary-action" href="/">BACK TO COMBATZONE</a>
+      </section></main></div>
+  );
 
   return (
     <div className="app-shell">
@@ -195,7 +227,7 @@ function BookingApp() {
       )}
 
       <main className="page-frame">
-        <p className="demo-note" role="status">Booking preview — prices and timings are provisional. Online reservations and payments are not yet available.</p>
+        <p className="demo-note" role="status">Request a booking — prices and timings are provisional. Our team must confirm your request; no online payment is taken.</p>
         {submitError && <p className="prototype-warning" role="alert">{submitError}</p>}
         {stage === 'mission' && (
           <MissionSelect
@@ -733,7 +765,7 @@ function AccountStep({
         number="04"
         eyebrow="OPERATOR PROFILE"
         title="YOUR CONTACT DETAILS."
-        text="Enter contact details to preview your booking summary. No account is created."
+        text="Enter the contact details our team should use to arrange your booking. No customer account is created."
       />
 
       <form
@@ -747,7 +779,7 @@ function AccountStep({
           <ShieldCheck size={24} />
           <div>
             <strong>CONTACT DETAILS</strong>
-            <span>Details remain in this page until you close or reload it. They are not submitted or saved.</span>
+            <span>When you submit your request, your details are stored securely for our team to manage the booking and contact you. Marketing is optional.</span>
           </div>
         </div>
 
@@ -835,8 +867,8 @@ function ReviewStep({
         title="CONFIRM THE OPERATION."
         text={
           mission.bookingMode === 'instant'
-            ? 'Review the mission brief. Prices are estimates; no payment or reservation can be made yet.'
-            : 'Review the mission brief. Corporate and resort operations require a confirmed quotation; online submission is not available yet.'
+            ? 'Review your request before sending it to Mission Control. Prices are estimates; the team will confirm availability and arrangements.'
+            : 'Review your request. Corporate and resort operations require a final quotation and confirmation from our team.'
         }
       />
 
@@ -882,10 +914,10 @@ function ReviewStep({
           {mission.bookingMode === 'instant' ? (
             <>
               <div className="checkout-icon"><CreditCard size={28} /></div>
-              <div className="panel-label">PAYMENT UNAVAILABLE</div>
-              <h3>PREVIEW ONLY</h3>
+              <div className="panel-label">BOOKING REQUEST</div>
+              <h3>SEND YOUR MISSION</h3>
               <p>
-                Online payment is not connected. This preview cannot reserve a slot or charge you.
+                Submit your request for our team to review. This does not reserve a slot or charge you.
               </p>
               <div className="payment-total">
                 <span>ESTIMATED TOTAL</span>
@@ -898,17 +930,17 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <WalletCards size={18} />
-                {submitting ? 'AUTHORIZING…' : 'ONLINE PAYMENT NOT AVAILABLE'}
+                {submitting ? 'SENDING…' : 'SUBMIT BOOKING REQUEST'}
               </button>
               <small className="prototype-warning">
-                No real card details are collected or charged in this prototype.
+                No payment is taken. We will contact you to confirm your booking.
               </small>
             </>
           ) : (
             <>
               <div className="checkout-icon"><ShieldCheck size={28} /></div>
               <div className="panel-label">CUSTOM OPERATION</div>
-              <h3>REQUEST PREVIEW</h3>
+              <h3>SEND YOUR REQUEST</h3>
               <p>
                 Corporate and resort deployments need a final operational review before payment and confirmation.
               </p>
@@ -919,14 +951,14 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <Radar size={18} />
-                {submitting ? 'TRANSMITTING…' : 'ONLINE REQUESTS NOT AVAILABLE'}
+                {submitting ? 'SENDING…' : 'SUBMIT BOOKING REQUEST'}
               </button>
             </>
           )}
         </div>
       </div>
 
-      <NavActions onBack={onBack} hideNext />
+      <NavActions onBack={onBack} hideNext disabled={submitting} />
     </section>
   );
 }
@@ -1009,7 +1041,7 @@ function NavActions({
 }) {
   return (
     <div className="nav-actions">
-      <button type="button" className="secondary-action" onClick={onBack}>
+      <button type="button" className="secondary-action" onClick={onBack} disabled={hideNext && disabled}>
         <ChevronLeft size={16} />
         BACK
       </button>

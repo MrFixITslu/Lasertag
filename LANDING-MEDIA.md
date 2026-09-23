@@ -38,4 +38,4 @@ The page is usable with static imagery when autoplay or YouTube is unavailable.
 Third-party YouTube requests occur when a player is mounted.
 
 The nginx policy permits only `https://www.youtube-nocookie.com` for frames.
-This change does not enable reservations or payments; booking remains a preview.
+Customers can now submit persistent booking requests. Admin confirmation is required; no online payment is collected.

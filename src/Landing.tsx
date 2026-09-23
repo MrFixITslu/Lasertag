@@ -66,7 +66,7 @@ export default function Landing() {
             <div className="cz-slogan" aria-label={slogans.join(' ')}><p key={line} aria-hidden="true">{slogans[line]}</p></div>
             <p className="cz-intro">Leave ordinary behind. Bring your squad into a mobile laser tag battle built for big moves, close calls and unforgettable wins.</p>
             <div className="cz-hero-actions"><a href="#booking" className="cz-enter"><Crosshair size={21} /><span>ENTER THE COMBATZONE<small>YOUR NEXT MISSION STARTS HERE</small></span><ArrowUpRight size={25} /></a><button className="cz-watch" onClick={() => setTheatre(true)}><span><Play size={18} fill="currentColor" /></span>WATCH THE ACTION</button></div>
-            <p className="cz-preview">Explore mission packages · Online reservations coming soon</p>
+            <p className="cz-preview">Explore mission packages · Send a booking request</p>
           </div>
           <aside className="cz-target-display" aria-label="Mobile laser tag in Saint Lucia">
             <div className="cz-target-top"><span><Radio size={14} /> FIELD INTEL</span><span>LC / 001</span></div>

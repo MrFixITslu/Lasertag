@@ -1,89 +1,144 @@
-# Laser Tag Booking Experience
+# CombatZone SLU
 
-**Launch status: preview only. Real bookings and payments are unavailable.** See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for verified fixes and remaining blockers.
+Mobile laser tag marketing, booking requests and a private booking-management
+console for Saint Lucia.
 
-Tactical, mobile-first booking experience for the Saint Lucia laser tag business.
+- `/` — Falcon gameplay landing page.
+- `/#booking` — customer booking request form.
+- `/admin` — password-protected booking dashboard.
 
-## V1 product goals
+Customer submissions are stored as **Pending** and receive a reference. Only an
+admin can confirm them. Online payment, automatic customer emails and customer
+accounts are not included. Prices and package timings remain provisional.
 
-- Tactical mission-control visual direction with animated HUD micro-interactions.
-- Direct booking for public, birthday/private, and community/festival missions.
-- Request-a-Mission flow for corporate and resort events.
-- Minimum 6 players; 12 players can play simultaneously.
-- Larger groups rotate in squads, with provisional +30 minutes per additional group of up to 6 players.
-- Fixed start-time selection between 8:00 AM and 4:00 PM.
-- One-hour operational buffer around each booking for setup and teardown.
-- Island-wide deployment/location capture.
-- Full-payment checkout flow behind a payment-provider abstraction.
-- Lightweight customer account model designed to support loyalty and future self-service booking management.
-- Weather preference: customers may opt in to play in light rain when conditions remain safe.
-- Reduced-motion support.
+## Admin features
 
-## Important V1 note
+Search by name, email or reference; filter by status/date; view customer and venue
+details; confirm, complete, cancel or reschedule requests; keep private notes;
+review activity history. Booking lists are paginated. The dashboard uses the
+same combat theme as the landing and booking pages.
 
-This repository starts as an interactive booking prototype. Payment processing, persistent accounts, real availability, travel-time rules, and production authentication are intentionally abstracted behind interfaces so they can be connected to the final providers later.
+Confirmed schedules cannot overlap. Conflict checks include each mission's play
+time, rotation extension and 60-minute operating buffer. The system assumes one
+mobile operation and conservatively allocates that buffer after the event. It
+does not calculate travel times. Final venue suitability, travel and customer
+communication are the operator's responsibility.
 
-Package durations in the initial UI are configurable data and should be checked against the final approved commercial package sheet before production launch.
+## Deploy on your server
 
-## Development
+**Migration from the old static container:** Nginx Proxy Manager must now forward
+to **`lasertag:8080`**, replacing port 80. The only Docker network remains the
+existing external **`proxy_network`**. No host ports are published.
 
-```bash
-npm ci
-npm run dev
-```
-
-Build:
+After merging and pulling the change:
 
 ```bash
-npm run build
+cp .env.example .env
+chmod 600 .env
+nano .env
 ```
 
+Set:
 
-## Docker deployment with Nginx Proxy Manager
+- `PUBLIC_ORIGIN=https://combatzone.v79sl.com` — exact public scheme and hostname.
+- `ADMIN_USERNAME=admin` — or your preferred username.
+- `ADMIN_PASSWORD=` — your own unique password, 16–256 characters. Do not leave blank.
 
-The app joins **only the existing external `proxy_network`** and serves HTTP on
-container port **80**. It publishes no host ports. Nginx Proxy Manager must also
-be attached to `proxy_network`.
-
-Check the network and start the app:
+Keep `.env` private and out of Git. In Compose `.env`, single-quote a password
+containing `$` to prevent interpolation. Never put credentials in `VITE_` variables.
+There is no default admin password, and startup fails if the password is missing
+or too short. Do not paste credentials into issues or screenshots.
 
 ```bash
 docker network inspect proxy_network
-docker compose config
 docker compose up -d --build
 ```
 
-If the network does not yet exist, create it once with
-`docker network create proxy_network` and attach your proxy to that network.
+Nginx Proxy Manager must be on the same `proxy_network`. Set the Proxy Host:
 
-In Nginx Proxy Manager, configure the Proxy Host:
+| Setting | Value |
+| --- | --- |
+| Domain | `combatzone.v79sl.com` |
+| Scheme | `http` |
+| Forward hostname | `lasertag` |
+| Forward port | `8080` |
+| SSL | Select/request your certificate; enable Force SSL |
 
-- Domain: `combatzone.v79sl.com`
-- Scheme: `http`
-- Forward hostname: `lasertag`
-- Forward port: `80`
-- Request/select the domain's SSL certificate and enable Force SSL.
-
-Check the running container:
+Visit `https://combatzone.v79sl.com/admin` and sign in with the `.env` credentials.
+Secure admin cookies require HTTPS. The server trusts one reverse-proxy hop;
+Nginx Proxy Manager must overwrite the forwarding headers. If adding a CDN or
+other proxy layer, review the trust configuration before deploying.
 
 ```bash
 docker compose ps
-docker compose exec lasertag wget -qO- http://127.0.0.1/health
+docker compose exec lasertag node -e "fetch('http://127.0.0.1:8080/health').then(async r=>console.log(r.status,await r.text()))"
 docker inspect lasertag --format '{{json .NetworkSettings.Networks}}'
 ```
 
-The network output should contain only `proxy_network`. The localhost health
-check runs **inside** the container; there is no host port 5173 mapping.
+The network output should contain only `proxy_network`. The service runs as the
+non-root `node` user with a read-only container filesystem; the data volume and
+`/tmp` are writable. The old container Nginx is replaced by the Node application.
+The optional `deploy/proxy-nginx.conf.example` is for a separate Nginx container.
 
-For future deployments after merging the changes:
+## Data, backups and recovery
+
+SQLite stores requests, historical package/price snapshots, internal notes and
+admin activity in `/app/data/bookings.sqlite`. The named `booking_data` volume
+survives container rebuilds. **Do not run `docker compose down -v`** on production:
+that removes the booking volume. Back up before server or application changes.
+
+Create a consistent online backup, then copy it off the server:
 
 ```bash
-git pull origin main
-docker compose up -d --build
+docker compose exec lasertag node scripts/backup.mjs /app/data/backups/bookings-backup.sqlite
+docker cp lasertag:/app/data/backups/bookings-backup.sqlite ./bookings-backup.sqlite
 ```
 
-For a separately managed Nginx container on `proxy_network`, see
-`deploy/proxy-nginx.conf.example`. Host-installed Nginx cannot resolve the
-Docker service name; use the shared Docker network with Nginx Proxy Manager.
+Use a new backup filename each time (the script refuses to overwrite files).
+Store copies securely: they contain customer contact details. A backup inside
+the same volume alone does not protect against server/disk loss.
 
-See `LANDING-MEDIA.md` for the Falcon video source and playback behaviour.
+To restore, stop the service, preserve the current data volume, and replace
+`bookings.sqlite` with the selected backup in the volume. Remove stale
+`bookings.sqlite-wal` / `bookings.sqlite-shm` sidecars **only while the service is
+stopped**, set ownership for UID/GID 1000 (the image's `node` user), then start and
+verify the restored booking list. Test recovery with a separate data volume first.
+
+To reset the admin password, change `ADMIN_PASSWORD` in `.env` and run
+`docker compose up -d --force-recreate`. Sessions expire after eight hours and
+are revoked at each server restart, so password rotation invalidates old sessions.
+
+## Development and checks
+
+Node 24+ is required. Copy `.env.example` to `.env`, set a password, and change
+`PUBLIC_ORIGIN` to `http://localhost:5173` for development. Use that exact URL
+when opening Vite; `127.0.0.1` is a different origin.
+
+```bash
+npm ci
+npm run dev:server
+```
+
+In another terminal:
+
+```bash
+npm run dev
+```
+
+Vite proxies `/api` to the backend on port 3000. `dev:server` compiles the backend
+and starts it; restart it after server changes. `npm run preview` alone is only
+a static frontend preview and cannot manage bookings. For a complete built local
+preview, build and run the server with `PUBLIC_ORIGIN=http://localhost:3000` and
+open `http://localhost:3000`:
+
+```bash
+PUBLIC_ORIGIN=http://localhost:3000 npm start
+```
+
+```bash
+npm run build
+npm test
+```
+
+See `PRODUCTION_READINESS.md` for the verification scope and remaining limits.
+See `LANDING-MEDIA.md` for media attribution and playback behaviour.
