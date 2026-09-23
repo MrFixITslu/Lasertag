@@ -1,3 +1,4 @@
+import PublicEvents from './PublicEvents';
 import Brand from './Brand';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUpRight, Crosshair, MapPin, Pause, Play, Radio, Shield, Target, Users, X, Zap } from 'lucide-react';
@@ -15,6 +16,7 @@ const operations = [
 ];
 
 export default function Landing() {
+  const [analyticsOff,setAnalyticsOff]=useState(()=>{try{return localStorage.getItem('cz-analytics-optout')==='1';}catch{return true;}});
   const [motion, setMotion] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [line, setLine] = useState(0);
   const [operation, setOperation] = useState(0);
@@ -92,9 +94,10 @@ export default function Landing() {
           <div className="cz-kit-image"><img src="/media/netronic-falcon.webp" alt="NETRONIC Falcon laser tag equipment" loading="lazy" width="900" height="600" /><span className="cz-kit-stamp">FIELD KIT / FALCON</span><span className="cz-kit-caption">EQUIPMENT IMAGE: NETRONIC</span></div>
           <div className="cz-kit-copy"><p className="cz-kicker">02 / GET IN THE GAME</p><h2 id="kit-title">The screen is off.<br />The <em>battle is on.</em></h2><p>Take the energy of your favourite team game into the real world. Move together. Find your angle. Make the next play count.</p><ol><li><span>01</span><div><strong>RALLY YOUR SQUAD</strong><p>Get your people together and explore your mission.</p></div></li><li><span>02</span><div><strong>CHOOSE YOUR GROUND</strong><p>Tell us where in Saint Lucia you want to play. The location must be suitable for the setup.</p></div></li><li><span>03</span><div><strong>MAKE YOUR MOVE</strong><p>Gear up, follow the briefing and let friendly rivalry take over.</p></div></li></ol><button className="cz-text-button" onClick={() => setTheatre(true)}>SEE FALCON IN ACTION <Play size={16} /></button></div>
         </section>
+        <PublicEvents />
         <section className="cz-final" aria-labelledby="final-title"><div className="cz-final-grid" aria-hidden="true" /><Crosshair size={36} /><p className="cz-kicker">SQUAD INVITE / YOU’RE IN</p><h2 id="final-title">LESS “SOMEDAY”.<br /><em>MORE GAME DAY.</em></h2><p>The group chat has talked enough. Give it a mission.</p><a href="#booking" className="cz-enter">ENTER THE COMBATZONE <ArrowUpRight size={23} /></a></section>
       </main>
-      <footer className="cz-footer"><span>COMBATZONE SLU <small>MOBILE LASER TAG / SAINT LUCIA</small></span><a href="https://netronic.net/en/media" target="_blank" rel="noreferrer">Equipment imagery & illustrative gameplay: NETRONIC</a><a href="#booking">MISSION BOOKING <ArrowUpRight size={14} /></a></footer>
+      <footer className="cz-footer"><span>COMBATZONE SLU <small>MOBILE LASER TAG / SAINT LUCIA</small></span><a href="https://netronic.net/en/media" target="_blank" rel="noreferrer">Equipment imagery & illustrative gameplay: NETRONIC</a><a href="#booking">MISSION BOOKING <ArrowUpRight size={14} /></a><button className="analytics-preference" onClick={()=>{const off=!analyticsOff;try{localStorage.setItem('cz-analytics-optout',off?'1':'0');}catch{}setAnalyticsOff(off);}}>{analyticsOff?'Anonymous visit measurement off — enable':'Anonymous visit measurement on — opt out'}</button></footer>
       <dialog ref={dialog} className="cz-theatre" aria-labelledby="theatre-title" onCancel={closeTheatre} onClose={() => setTheatre(false)}>
         <header><div><small>COMBATZONE SLU / FIELD FOOTAGE</small><h2 id="theatre-title">FALCON. IN ACTION.</h2></div><button onClick={closeTheatre} aria-label="Close gameplay video"><X /></button></header>
         {theatre && <iframe title="Watch NETRONIC Falcon outdoor laser tag gameplay" src={`https://www.youtube-nocookie.com/embed/${gameplayId}?autoplay=1&rel=0&playsinline=1`} allow="autoplay; encrypted-media; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />}

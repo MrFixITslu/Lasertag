@@ -1,0 +1,329 @@
+.business-panel {
+  padding: clamp(18px, 3vw, 36px);
+  margin: 24px 0;
+  color: #dce6df;
+}
+.business-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: start;
+}
+.business-heading h2 {
+  font-size: clamp(26px, 4vw, 45px);
+  margin: 6px 0;
+  letter-spacing: -0.035em;
+}
+.business-panel p {
+  line-height: 1.6;
+  color: #a7bbb0;
+}
+.business-panel h3 {
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  margin: 24px 0 15px;
+}
+.business-panel button,
+.business-nav button {
+  padding: 12px 18px;
+  background: #17291f;
+  color: #d6eddd;
+  border: 1px solid #38513d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+.business-panel button:hover,
+.business-nav button:hover {
+  border-color: #c4ff38;
+}
+.business-panel button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.business-panel .primary-action {
+  background: #c4ff38;
+  color: #101a10;
+}
+.business-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.business-nav button[aria-pressed="true"] {
+  background: #c4ff38;
+  color: #0b180c;
+}
+.business-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #c4d5c8;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+}
+.business-panel input,
+.business-panel select,
+.business-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #354b3e;
+  background: #0e1b15;
+  color: #f1f6ef;
+  padding: 12px;
+  font: inherit;
+  font-size: 14px;
+  border-radius: 2px;
+}
+.business-panel textarea {
+  resize: vertical;
+}
+.business-panel input:focus,
+.business-panel select:focus,
+.business-panel textarea:focus {
+  outline: 2px solid #c4ff38;
+  outline-offset: 2px;
+}
+.business-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.business-row > label {
+  min-width: 150px;
+}
+.business-form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  background: #111e17;
+  padding: 22px;
+  margin: 24px 0;
+  border: 1px solid #304737;
+}
+.business-form button {
+  align-self: flex-start;
+}
+.business-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 15px;
+  margin: 25px 0;
+}
+.business-cards > div,
+.business-cards > .studio-draft {
+  padding: 23px;
+  background: linear-gradient(125deg, #203520, #0b1611);
+  border: 1px solid #38513d;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.business-cards strong {
+  font-size: 24px;
+  color: #c4ff38;
+}
+.business-cards span {
+  font-size: 12px;
+  color: #b7c9ba;
+}
+.business-table {
+  overflow-x: auto;
+  margin: 18px 0;
+}
+.business-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.business-table th {
+  text-align: left;
+  color: #a1bdab;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 14px;
+}
+.business-table td {
+  padding: 14px;
+  border-top: 1px solid #293d30;
+  line-height: 1.7;
+}
+.business-check {
+  flex-direction: row !important;
+  align-items: center;
+}
+.business-check input {
+  width: auto;
+}
+.business-item {
+  padding: 20px 0;
+  border-bottom: 1px solid #304333;
+}
+.preserve-lines {
+  white-space: pre-wrap;
+}
+.studio-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.studio-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.3fr);
+  gap: 30px;
+}
+.studio-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.studio-preview {
+  background: #050b08;
+  padding: 20px;
+  align-self: start;
+  position: sticky;
+  top: 20px;
+  text-align: center;
+}
+.studio-preview canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 650px;
+  width: auto;
+  height: auto;
+  margin: 0 auto 20px;
+  box-shadow: 0 10px 50px #000;
+}
+.studio-preview .business-row {
+  justify-content: center;
+}
+.studio-preview p {
+  font-size: 12px;
+}
+.studio-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.studio-upload {
+  padding: 16px;
+  border: 1px dashed #638154;
+}
+.studio-draft h3 {
+  margin: 3px 0;
+}
+.public-events {
+  padding: 65px max(24px, 6vw);
+  background: #0b1510;
+  color: #eef6e7;
+}
+.public-events h2 {
+  font-size: clamp(28px, 4vw, 55px);
+}
+.public-event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+}
+.public-event-card {
+  border: 1px solid #38503c;
+  background: #132017;
+  padding: 20px;
+}
+.public-event-card img,
+.public-event-card video {
+  width: 100%;
+  max-height: 350px;
+  object-fit: cover;
+}
+.public-event-card p {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+.public-event-card a {
+  color: #c4ff38;
+}
+.business-panel input[type="color"] {
+  height: 45px;
+  max-width: 140px;
+}
+@media (max-width: 850px) {
+  .studio-layout {
+    grid-template-columns: 1fr;
+  }
+  .studio-preview {
+    position: static;
+    grid-row: 1;
+  }
+  .studio-preview canvas {
+    max-height: 500px;
+  }
+  .business-heading {
+    flex-direction: column;
+  }
+  .business-row {
+    align-items: stretch;
+  }
+  .business-nav button {
+    flex: 1;
+  }
+  .business-form {
+    padding: 15px;
+  }
+}
+.kpi-cards > div {
+  min-height: 150px;
+}
+.kpi-cards small {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.kpi-cards .kpi-on-target {
+  color: #c4ff38;
+}
+.kpi-cards .kpi-off-target {
+  color: #ffbc80;
+}
+.kpi-trend {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  border-bottom: 1px solid #40533f;
+  padding: 18px 0;
+}
+.kpi-trend > div {
+  display: flex;
+  flex: 1;
+  min-width: 38px;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  font-size: 10px;
+  gap: 6px;
+}
+.kpi-trend i {
+  display: block;
+  background: #a9df35;
+  width: 70%;
+  min-width: 14px;
+}
+.kpi-trend small {
+  white-space: nowrap;
+}
+.analytics-preference {
+  background: none;
+  border: 0;
+  color: #a4b397;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+}

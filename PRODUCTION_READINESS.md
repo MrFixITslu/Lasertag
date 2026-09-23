@@ -52,3 +52,13 @@ private port and persistent volume.
 
 Package pricing, rotation rules, venue suitability and timings require the
 operator's commercial approval; this implementation does not certify them.
+
+
+## Business workspace update
+
+- Staff/admin roles with optional finance access enforced server-side; changed permissions revoke sessions.
+- Payment/refund ledger uses integer cents and original booking currencies; estimates are not income.
+- Uploaded media is normalised with FFmpeg and retained in the persistent data volume. Back up media and database together.
+- SMTP and official social publishing need provider credentials/approvals. No live delivery has been verified in this environment.
+- KPI definitions, historical gaps, permission scope and unmeasured metrics are explicit; no invented reach, open rates, profit or ROAS.
+- Browser video recording/rendered layout and Docker/Nginx deployment still need target-host checks. See MARKETING_SETUP.md.
