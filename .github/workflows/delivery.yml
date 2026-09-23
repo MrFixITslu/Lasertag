@@ -1,0 +1,64 @@
+name: Continuous Delivery
+
+on:
+  workflow_run:
+    workflows: ["Booking app checks"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deliver:
+    name: Package and publish
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Create release bundle
+        shell: bash
+        run: |
+          tar --exclude=.git --exclude=node_modules --exclude='*.tar.gz' \
+              -czf "${RUNNER_TEMP}/${GITHUB_REPOSITORY##*/}-${GITHUB_SHA::12}.tar.gz" .
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.event.workflow_run.head_sha || github.sha }}
+          path: ${{ runner.temp }}/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Detect Dockerfile
+        id: docker
+        shell: bash
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: ${{ steps.docker.outputs.enabled == 'true' }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish validated Docker image
+        if: ${{ steps.docker.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          IMAGE="${{ steps.docker.outputs.image }}"
+          COMMIT="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHORT_SHA="${COMMIT::12}"
+          docker build -t "$IMAGE:latest" -t "$IMAGE:$SHORT_SHA" .
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:$SHORT_SHA"
