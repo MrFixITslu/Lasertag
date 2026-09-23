@@ -5,10 +5,28 @@ services:
       dockerfile: Dockerfile
     container_name: lasertag
     restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      DATABASE_PATH: /app/data/bookings.sqlite
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in .env}
     expose:
-      - "80"
+      - "8080"
+    volumes:
+      - booking_data:/app/data
     networks:
       - proxy_network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  booking_data:
 
 networks:
   proxy_network:

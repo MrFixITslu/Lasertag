@@ -6,3 +6,8 @@ dist
 .env
 .env.*
 !.env.example
+dist-server
+data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
