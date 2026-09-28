@@ -36,7 +36,8 @@ import {
   formatDuration,
   formatTime,
   validCustomer,
-  isPrivateDeploymentVenue
+  isPrivateDeploymentVenue,
+  TEAM_NAMES
 } from './lib/booking';
 import type { BookingDraft, MissionPackage } from './types';
 
@@ -460,18 +461,19 @@ function SquadBuilder({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const squads = Array.from({ length: summary.squadCount }, (_, index) => {
-    const playersBefore = index * 6;
-    return Math.min(6, Math.max(0, players - playersBefore));
-  });
+  const teams = summary.teamSizes;
+  const teamName = (index: number) => TEAM_NAMES[index] || `TEAM ${index + 1}`;
+  const matchRotation = summary.matchRotation
+    .map(([left, right]) => `${teamName(left)} vs ${teamName(right)}`)
+    .join(' • ');
 
   return (
     <section className="panel-stack">
       <StageHeading
         number="02"
-        eyebrow="SQUAD CONFIGURATION"
-        title="ASSEMBLE YOUR SQUAD."
-        text="Players are grouped into squads of up to six. Up to twelve can battle simultaneously; larger groups rotate according to the selected package."
+        eyebrow="TEAM CONFIGURATION"
+        title="BUILD BALANCED TEAMS."
+        text="CombatZone automatically divides the group as evenly as possible. Teams differ by no more than one player, with up to six players per team."
       />
 
       <div className="two-column-layout">
@@ -535,13 +537,13 @@ function SquadBuilder({
         </div>
 
         <div className="hud-panel">
-          <div className="panel-label">SQUAD MAP</div>
+          <div className="panel-label">BALANCED TEAM MAP</div>
           <div className="squad-map">
-            {squads.map((size, index) => (
+            {teams.map((size, index) => (
               <div className="squad-row" key={index}>
                 <div className="squad-name">
-                  <span>SQUAD</span>
-                  <strong>{String.fromCharCode(65 + index)}</strong>
+                  <span>TEAM</span>
+                  <strong>{teamName(index)}</strong>
                 </div>
                 <div className="operators">
                   {Array.from({ length: 6 }, (_, playerIndex) => (
@@ -556,6 +558,24 @@ function SquadBuilder({
                 <span className="squad-count">{size}/6</span>
               </div>
             ))}
+          </div>
+
+          <div className="rotation-rule">
+            <Users size={18} />
+            <div>
+              <strong>TEAM BALANCE</strong>
+              <span>
+                {summary.teamCount} balanced teams // {summary.teamSizes.join(' / ')} players. Team sizes differ by no more than one player.
+              </span>
+            </div>
+          </div>
+
+          <div className="rotation-rule">
+            <RotateCcw size={18} />
+            <div>
+              <strong>MATCH ROTATION</strong>
+              <span>{matchRotation}</span>
+            </div>
           </div>
 
           <div className={`rotation-status ${summary.customQuoteRequired || summary.rotationsRequired ? 'warning' : 'clear'}`}>
@@ -906,7 +926,10 @@ function ReviewStep({
             <h2>{mission.name}</h2>
           </div>
 
-          <BriefRow label="Squad" value={`${draft.players} players // ${summary.squadCount} squad${summary.squadCount === 1 ? '' : 's'}`} />
+          <BriefRow
+            label="Teams"
+            value={`${draft.players} players // ${summary.teamCount} balanced teams // ${summary.teamSizes.join(' / ')}`}
+          />
           <BriefRow label="Date" value={draft.date} />
           <BriefRow label="Start" value={formatTime(draft.time)} />
           <BriefRow label="Mission time" value={formatDuration(summary.totalMissionMinutes)} />
@@ -946,8 +969,8 @@ function ReviewStep({
             <div className="brief-alert">
               <RotateCcw size={16} />
               {summary.rotationExtensionMinutes
-                ? `Squad rotations add ${formatDuration(summary.rotationExtensionMinutes)} to this mission.`
-                : 'Planned squad rotations are included in this package.'}
+                ? `Team rotations add ${formatDuration(summary.rotationExtensionMinutes)} to this mission.`
+                : 'Planned team rotations are included in this package.'}
             </div>
           )}
 
