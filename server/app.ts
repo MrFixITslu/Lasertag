@@ -22,6 +22,7 @@ import {
   calculateBookingSummary,
   fixedStartTimes,
   validCustomer,
+  isPrivateDeploymentVenue,
 } from "../src/lib/booking";
 import { installKpis, validVisit, hashVisit } from "./kpis";
 import { installBusiness } from "./business";
@@ -88,7 +89,7 @@ function validateDraft(input: unknown) {
     players < mission.minPlayers ||
     players > 60
   )
-    fail(400, "Choose between 6 and 60 players.");
+    fail(400, `Choose between ${mission.minPlayers} and 60 players.`);
   const slot = schedule(body.date, body.time);
   const venues = ["home", "field", "community", "hotel", "event", "other"];
   if (typeof body.venueType !== "string" || !venues.includes(body.venueType))
@@ -121,7 +122,13 @@ function validateDraft(input: unknown) {
     weatherFlexible: body.weatherFlexible,
     customer,
   };
-  return { draft, mission, summary: calculateBookingSummary(mission, players) };
+  return {
+    draft,
+    mission,
+    summary: calculateBookingSummary(mission, players, {
+      privateDeployment: isPrivateDeploymentVenue(draft.venueType),
+    }),
+  };
 }
 type Row = Record<string, any>;
 export interface ServerConfig {
