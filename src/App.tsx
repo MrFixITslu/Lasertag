@@ -230,7 +230,7 @@ function BookingApp() {
       )}
 
       <main className="page-frame">
-        <p className="demo-note" role="status">Standard package pricing is shown. Availability, travel outside the Gros Islet/Castries core area, venue requirements and custom event arrangements are confirmed by our team; no online payment is taken.</p>
+        <p className="demo-note" role="status">Standard package pricing and customer play time are shown. Scheduling buffers cover setup and turnaround and are not extra play time. Availability, travel outside the Gros Islet/Castries core area, venue requirements and custom arrangements are confirmed by our team; no online payment is taken.</p>
         {submitError && <p className="prototype-warning" role="alert">{submitError}</p>}
         {stage === 'mission' && (
           <MissionSelect
@@ -942,7 +942,7 @@ function ReviewStep({
             </div>
           )}
 
-          {summary.rotationsRequired && (
+          {!summary.customQuoteRequired && summary.rotationsRequired && (
             <div className="brief-alert">
               <RotateCcw size={16} />
               {summary.rotationExtensionMinutes
