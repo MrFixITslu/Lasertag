@@ -3,25 +3,27 @@ import type { MissionPackage } from '../types';
 /**
  * Commercial package configuration.
  *
- * Prices reflect the current working package set.
- * Durations are intentionally centralized here because final package timing
- * should be confirmed against the approved commercial package sheet before launch.
+ * Keep pricing, inclusions, deposits and timing here so the public site,
+ * booking calculator and server all use the same commercial rules.
  */
 export const missions: MissionPackage[] = [
   {
     id: 'quick-battle',
     name: 'Quick Battle',
-    callSign: 'RAPID-30',
+    callSign: 'RAPID-15',
     category: 'public',
     bookingMode: 'instant',
     pricingMode: 'per_participant',
     price: 30,
+    priceLabel: 'PER PLAYER',
     currency: 'XCD',
-    durationMinutes: 30,
+    durationMinutes: 15,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'Fast deployment for squads that want the action without a long operation.',
-    highlights: ['Fast mission', '6+ players', 'Mobile setup']
+    privateDeploymentMinimum: 450,
+    privateDepositPercent: 40,
+    description: 'A fast 15-minute battle for public/open play or a compact private mission.',
+    highlights: ['15-min battle', '6+ players', 'Private deployment minimum EC$450']
   },
   {
     id: 'battle-hour',
@@ -30,13 +32,16 @@ export const missions: MissionPackage[] = [
     category: 'public',
     bookingMode: 'instant',
     pricingMode: 'per_participant',
-    price: 50,
+    price: 60,
+    priceLabel: 'PER PLAYER',
     currency: 'XCD',
     durationMinutes: 60,
-    minPlayers: 6,
+    minPlayers: 8,
     maxConcurrentPlayers: 12,
-    description: 'A full hour of rotating game modes and team battles.',
-    highlights: ['60-minute mission', 'Multiple game modes', '6+ players']
+    minimumCharge: 480,
+    privateDepositPercent: 40,
+    description: 'A full hour of rotating game modes and team battles with an eight-player minimum.',
+    highlights: ['60-minute mission', 'EC$480 minimum', '8+ players']
   },
   {
     id: 'birthday-strike',
@@ -45,13 +50,17 @@ export const missions: MissionPackage[] = [
     category: 'birthday',
     bookingMode: 'instant',
     pricingMode: 'fixed',
-    price: 450,
+    price: 550,
+    priceLabel: 'PACKAGE',
     currency: 'XCD',
     durationMinutes: 60,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'A focused birthday mission with enough time for a complete team battle experience.',
-    highlights: ['Birthday ready', 'Private mission', 'Up to 12 active players']
+    includedPlayers: 8,
+    extraPlayerPrice: 50,
+    depositPercent: 40,
+    description: 'A private one-hour birthday mission with eight players included.',
+    highlights: ['Includes 8 players', '+EC$50 extra player', '40% deposit']
   },
   {
     id: 'birthday-battle',
@@ -60,13 +69,17 @@ export const missions: MissionPackage[] = [
     category: 'birthday',
     bookingMode: 'instant',
     pricingMode: 'fixed',
-    price: 650,
+    price: 750,
+    priceLabel: 'PACKAGE',
     currency: 'XCD',
-    durationMinutes: 120,
+    durationMinutes: 90,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'More time, more modes, and more room for squad rotations.',
-    highlights: ['Extended play', 'Great for larger groups', 'Private mission']
+    includedPlayers: 10,
+    extraPlayerPrice: 50,
+    depositPercent: 40,
+    description: 'A 90-minute private birthday battle with more time for modes and team play.',
+    highlights: ['Includes 10 players', '+EC$50 extra player', '40% deposit']
   },
   {
     id: 'ultimate-birthday-tournament',
@@ -75,13 +88,37 @@ export const missions: MissionPackage[] = [
     category: 'birthday',
     bookingMode: 'instant',
     pricingMode: 'fixed',
-    price: 850,
+    price: 950,
+    priceLabel: 'PACKAGE',
     currency: 'XCD',
-    durationMinutes: 180,
+    durationMinutes: 120,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'A tournament-style birthday operation built for teams, rotations, and a big finish.',
-    highlights: ['Tournament format', 'Longest birthday mission', 'Rotation friendly']
+    includedPlayers: 12,
+    extraPlayerPrice: 45,
+    depositPercent: 40,
+    description: 'A two-hour tournament-style birthday operation built for teams, rotations and a big finish.',
+    highlights: ['Includes 12 players', '+EC$45 extra player', '40% deposit']
+  },
+  {
+    id: 'school-youth-battle',
+    name: 'School / Youth Battle',
+    callSign: 'YOUTH-OPS',
+    category: 'school',
+    bookingMode: 'instant',
+    pricingMode: 'fixed',
+    price: 650,
+    priceLabel: 'PACKAGE',
+    currency: 'XCD',
+    durationMinutes: 90,
+    minPlayers: 6,
+    maxConcurrentPlayers: 12,
+    includedPlayers: 20,
+    extraPlayerPrice: 30,
+    depositPercent: 40,
+    rotationIncludedPlayers: 20,
+    description: 'A supervised rotation format for schools, youth groups and organised clubs.',
+    highlights: ['Includes up to 20', '+EC$30 extra participant', '40% deposit']
   },
   {
     id: 'community-festival-play',
@@ -90,13 +127,18 @@ export const missions: MissionPackage[] = [
     category: 'community',
     bookingMode: 'instant',
     pricingMode: 'per_participant',
-    price: 20,
+    price: 30,
+    priceLabel: 'PER PLAYER',
     currency: 'XCD',
     durationMinutes: 15,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'Mobile laser tag for community events, festivals, and open-play activations.',
-    highlights: ['Island-wide deployment', 'Per-player pricing', 'Event friendly']
+    activationFee: 500,
+    rotationIncludedPlayers: 12,
+    rotationGroupSize: 12,
+    rotationExtensionMinutes: 15,
+    description: 'Event activation with short 15-minute rounds designed to move groups through efficiently.',
+    highlights: ['EC$500 activation', 'EC$30/player', '15-min rounds']
   },
   {
     id: 'corporate-team-battle',
@@ -105,13 +147,17 @@ export const missions: MissionPackage[] = [
     category: 'corporate',
     bookingMode: 'request',
     pricingMode: 'fixed',
-    price: 800,
+    price: 950,
+    priceLabel: 'FROM',
     currency: 'XCD',
-    durationMinutes: 120,
+    durationMinutes: 90,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'A customizable team-building mission for companies and staff groups.',
-    highlights: ['Custom format', 'Team building', 'Request a Mission']
+    includedPlayers: 12,
+    extraPlayerPrice: 65,
+    depositPercent: 50,
+    description: 'A customizable 90-minute team-building mission for companies and staff groups.',
+    highlights: ['Includes 12 players', '+EC$65 extra player', '50% deposit']
   },
   {
     id: 'corporate-tournament',
@@ -120,13 +166,18 @@ export const missions: MissionPackage[] = [
     category: 'corporate',
     bookingMode: 'request',
     pricingMode: 'fixed',
-    price: 1200,
+    price: 1500,
+    priceLabel: 'FROM',
     currency: 'XCD',
     durationMinutes: 180,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'A longer tournament operation for larger teams and company events.',
-    highlights: ['Tournament structure', 'Custom timing', 'Request a Mission']
+    includedPlayers: 24,
+    extraPlayerPrice: 50,
+    depositPercent: 50,
+    rotationIncludedPlayers: 24,
+    description: 'A tournament operation for larger company teams with planned rotations built into the format.',
+    highlights: ['Includes up to 24', '+EC$50 extra player', '50% deposit']
   },
   {
     id: 'resort-guest-experience',
@@ -134,14 +185,16 @@ export const missions: MissionPackage[] = [
     callSign: 'RESORT-OPS',
     category: 'resort',
     bookingMode: 'request',
-    pricingMode: 'per_participant',
-    price: 20,
-    currency: 'USD',
-    durationMinutes: 60,
+    pricingMode: 'fixed',
+    price: 900,
+    priceLabel: 'FROM',
+    currency: 'XCD',
+    durationMinutes: 90,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
-    description: 'A tailored guest activity designed for hotel and resort operations.',
-    highlights: ['Guest experience', 'Custom deployment', 'Request a Mission']
+    depositPercent: 50,
+    description: 'A tailored 90-minute guest activation for hotels and resorts, with larger or recurring programs quoted separately.',
+    highlights: ['From EC$900', '90-minute base', '50% deposit']
   }
 ];
 
