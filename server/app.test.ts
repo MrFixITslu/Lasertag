@@ -228,7 +228,8 @@ describe("Booking API security and workflows", () => {
         auth,
       )
     ).json();
-    expect(item.summary.totalPrice).toBe(120);
+    expect(item.summary.totalPrice).toBe(680);
+    expect(item.summary.activationFee).toBe(500);
     expect(item.summary.baseDurationMinutes).toBe(15);
     expect(item.internalNotes).toBe("");
     expect((await service.request(`/api/bookings/${item.id}`)).status).toBe(
