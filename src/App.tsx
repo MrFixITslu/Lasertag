@@ -45,7 +45,7 @@ type BookingStage = 'mission' | 'squad' | 'deployment' | 'account' | 'review';
 type MissionFilter = 'instant' | 'request';
 
 const stageOrder: BookingStage[] = ['mission', 'squad', 'deployment', 'account', 'review'];
-const stageLabels = ['Mission', 'Squad', 'Deployment', 'Operator', 'Confirm'];
+const stageLabels = ['Mission', 'Teams', 'Deployment', 'Operator', 'Confirm'];
 
 const venueTypes = [
   { id: 'home', label: 'Home / Private Property', icon: MapPin },
