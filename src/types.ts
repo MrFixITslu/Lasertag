@@ -6,7 +6,7 @@ export interface MissionPackage {
   id: string;
   name: string;
   callSign: string;
-  category: 'public' | 'birthday' | 'community' | 'corporate' | 'resort';
+  category: 'public' | 'birthday' | 'community' | 'school' | 'corporate' | 'resort';
   bookingMode: BookingMode;
   pricingMode: PricingMode;
   price: number;
@@ -16,6 +16,17 @@ export interface MissionPackage {
   maxConcurrentPlayers: number;
   description: string;
   highlights: string[];
+  priceLabel?: string;
+  includedPlayers?: number;
+  extraPlayerPrice?: number;
+  minimumCharge?: number;
+  activationFee?: number;
+  depositPercent?: number;
+  privateDepositPercent?: number;
+  privateDeploymentMinimum?: number;
+  rotationIncludedPlayers?: number;
+  rotationGroupSize?: number;
+  rotationExtensionMinutes?: number;
 }
 
 export interface CustomerProfile {
@@ -46,6 +57,14 @@ export interface BookingSummary {
   totalBlockMinutes: number;
   squadCount: number;
   rotationsRequired: boolean;
+  rotationsIncluded: boolean;
+  packagePrice: number;
+  additionalPlayerPrice: number;
+  activationFee: number;
+  minimumAdjustment: number;
+  privateDeploymentMinimumApplied: boolean;
+  depositPercent: number;
+  depositAmount: number;
   totalPrice: number;
   currency: Currency;
 }
