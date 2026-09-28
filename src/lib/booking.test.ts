@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { calculateBookingSummary, buildDateChoices, validCustomer } from './booking';
+import {
+  calculateBookingSummary,
+  buildBalancedTeams,
+  buildMatchRotation,
+  buildDateChoices,
+  validCustomer
+} from './booking';
 import type { MissionPackage } from '../types';
 import { missions } from '../data/missions';
 
@@ -18,6 +24,50 @@ const mission: MissionPackage = {
   description: 'Test',
   highlights: []
 };
+
+
+describe('balanced team planning', () => {
+  it('splits 15 corporate players into three equal teams', () => {
+    expect(buildBalancedTeams(15)).toEqual([5, 5, 5]);
+    const summary = calculateBookingSummary(
+      missions.find((item) => item.id === 'corporate-team-battle')!,
+      15
+    );
+    expect(summary.teamCount).toBe(3);
+    expect(summary.squadCount).toBe(3);
+    expect(summary.teamSizes).toEqual([5, 5, 5]);
+    expect(summary.matchRotation).toHaveLength(3);
+  });
+
+  it('balances uneven teams to within one player', () => {
+    expect(buildBalancedTeams(7)).toEqual([4, 3]);
+    expect(buildBalancedTeams(13)).toEqual([5, 4, 4]);
+    expect(buildBalancedTeams(16)).toEqual([6, 5, 5]);
+    expect(buildBalancedTeams(17)).toEqual([6, 6, 5]);
+    expect(buildBalancedTeams(19)).toEqual([5, 5, 5, 4]);
+    expect(buildBalancedTeams(23)).toEqual([6, 6, 6, 5]);
+  });
+
+  it('keeps every standard 6-24 player group balanced and at six or fewer per team', () => {
+    for (let players = 6; players <= 24; players += 1) {
+      const teams = buildBalancedTeams(players);
+      expect(teams.reduce((sum, size) => sum + size, 0)).toBe(players);
+      expect(Math.max(...teams)).toBeLessThanOrEqual(6);
+      expect(Math.max(...teams) - Math.min(...teams)).toBeLessThanOrEqual(1);
+      expect(teams.length).toBe(Math.max(2, Math.ceil(players / 6)));
+    }
+  });
+
+  it('creates each round-robin pairing exactly once', () => {
+    const rotation = buildMatchRotation(4);
+    expect(rotation).toHaveLength(6);
+    const unique = new Set(
+      rotation.map(([left, right]) => [left, right].sort((a, b) => a - b).join('-'))
+    );
+    expect(unique.size).toBe(6);
+    expect([...unique].sort()).toEqual(['0-1', '0-2', '0-3', '1-2', '1-3', '2-3']);
+  });
+});
 
 describe('calculateBookingSummary', () => {
   it('keeps a 12-player group within the base mission duration', () => {
@@ -38,10 +88,12 @@ describe('calculateBookingSummary', () => {
     expect(calculateBookingSummary(mission, 24).rotationExtensionMinutes).toBe(60);
   });
 
-  it('enforces the six-player minimum for calculations', () => {
+  it('enforces the six-player minimum and still creates two balanced teams', () => {
     const result = calculateBookingSummary(mission, 2);
 
-    expect(result.squadCount).toBe(1);
+    expect(result.squadCount).toBe(2);
+    expect(result.teamCount).toBe(2);
+    expect(result.teamSizes).toEqual([3, 3]);
     expect(result.totalPrice).toBe(180);
   });
 

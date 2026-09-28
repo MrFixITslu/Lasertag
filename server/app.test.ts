@@ -251,6 +251,30 @@ describe("Booking API security and workflows", () => {
     expect(persisted.total).toBe(1);
     expect(persisted.bookings[0].reference).toBe(receipt.reference);
   });
+  it("persists balanced corporate teams and their match rotation", async () => {
+    const service = await start();
+    await createOne(service, draft({
+      missionId: "corporate-team-battle",
+      players: 15,
+      venueType: "event",
+    }));
+    const auth = await service.login();
+    const list = await (
+      await service.request("/api/admin/bookings", "GET", undefined, auth)
+    ).json();
+    const item = await (
+      await service.request(
+        `/api/admin/bookings/${list.bookings[0].id}`,
+        "GET",
+        undefined,
+        auth,
+      )
+    ).json();
+    expect(item.summary.teamCount).toBe(3);
+    expect(item.summary.teamSizes).toEqual([5, 5, 5]);
+    expect(item.summary.matchRotation).toHaveLength(3);
+    expect(item.summary.matchRotation.flat().sort()).toEqual([0, 0, 1, 1, 2, 2]);
+  });
   it("flags above-standard groups for quotation without extending fixed package play time", async () => {
     const service = await start();
     await createOne(service, draft({
