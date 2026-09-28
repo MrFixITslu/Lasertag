@@ -88,10 +88,12 @@ describe('calculateBookingSummary', () => {
     expect(calculateBookingSummary(mission, 24).rotationExtensionMinutes).toBe(60);
   });
 
-  it('enforces the six-player minimum for calculations', () => {
+  it('enforces the six-player minimum and still creates two balanced teams', () => {
     const result = calculateBookingSummary(mission, 2);
 
-    expect(result.squadCount).toBe(1);
+    expect(result.squadCount).toBe(2);
+    expect(result.teamCount).toBe(2);
+    expect(result.teamSizes).toEqual([3, 3]);
     expect(result.totalPrice).toBe(180);
   });
 
