@@ -63,10 +63,13 @@ describe('commercial package pricing', () => {
     return value;
   };
 
-  it('keeps public Quick Battle at per-player pricing', () => {
+  it('keeps public Quick Battle at per-player pricing with a short turnaround buffer', () => {
     const summary = calculateBookingSummary(packageById('quick-battle'), 6);
     expect(summary.totalPrice).toBe(180);
     expect(summary.depositPercent).toBe(0);
+    expect(summary.baseDurationMinutes).toBe(15);
+    expect(summary.operationalBufferMinutes).toBe(15);
+    expect(summary.totalBlockMinutes).toBe(30);
   });
 
   it('applies the private mobile minimum and deposit to Quick Battle', () => {
@@ -78,34 +81,70 @@ describe('commercial package pricing', () => {
     expect(summary.privateDeploymentMinimumApplied).toBe(true);
     expect(summary.depositPercent).toBe(40);
     expect(summary.depositAmount).toBe(180);
+    expect(summary.operationalBufferMinutes).toBe(60);
+    expect(summary.totalBlockMinutes).toBe(75);
   });
 
-  it('enforces the Battle Hour eight-player minimum price', () => {
-    expect(calculateBookingSummary(packageById('battle-hour'), 8).totalPrice).toBe(480);
+  it('enforces the Battle Hour minimum without giving larger standard groups free extra time', () => {
+    const minimum = calculateBookingSummary(packageById('battle-hour'), 8);
+    const larger = calculateBookingSummary(packageById('battle-hour'), 24);
+    expect(minimum.totalPrice).toBe(480);
+    expect(minimum.operationalBufferMinutes).toBe(30);
+    expect(larger.totalMissionMinutes).toBe(60);
+    expect(larger.rotationExtensionMinutes).toBe(0);
+    expect(larger.customQuoteRequired).toBe(false);
   });
 
-  it('charges birthday extras after included players', () => {
+  it('charges birthday extras inside the standard limit and quotes larger groups', () => {
     const summary = calculateBookingSummary(packageById('birthday-strike'), 10);
+    const oversized = calculateBookingSummary(packageById('birthday-strike'), 13);
     expect(summary.packagePrice).toBe(550);
     expect(summary.additionalPlayerPrice).toBe(100);
     expect(summary.totalPrice).toBe(650);
     expect(summary.depositAmount).toBe(260);
+    expect(summary.totalMissionMinutes).toBe(60);
+    expect(oversized.customQuoteRequired).toBe(true);
+    expect(oversized.rotationExtensionMinutes).toBe(0);
+    expect(oversized.totalMissionMinutes).toBe(60);
+    expect(oversized.depositPercent).toBe(0);
   });
 
-  it('adds the community activation fee to player pricing', () => {
-    const summary = calculateBookingSummary(packageById('community-festival-play'), 6);
-    expect(summary.packagePrice).toBe(180);
-    expect(summary.activationFee).toBe(500);
-    expect(summary.totalPrice).toBe(680);
+  it('prices community activations by 15-minute participant rounds', () => {
+    const firstRound = calculateBookingSummary(packageById('community-festival-play'), 6);
+    const secondRound = calculateBookingSummary(packageById('community-festival-play'), 24);
+    expect(firstRound.packagePrice).toBe(180);
+    expect(firstRound.activationFee).toBe(500);
+    expect(firstRound.totalPrice).toBe(680);
+    expect(firstRound.baseDurationMinutes).toBe(15);
+    expect(secondRound.rotationExtensionMinutes).toBe(15);
+    expect(secondRound.totalMissionMinutes).toBe(30);
+    expect(secondRound.totalPrice).toBe(1220);
   });
 
-  it('includes planned corporate tournament rotations for 24 players', () => {
+  it('includes planned corporate tournament rotations in the purchased three-hour window', () => {
     const summary = calculateBookingSummary(packageById('corporate-tournament'), 24);
+    const oversized = calculateBookingSummary(packageById('corporate-tournament'), 25);
     expect(summary.totalPrice).toBe(1500);
     expect(summary.rotationsRequired).toBe(true);
     expect(summary.rotationsIncluded).toBe(true);
     expect(summary.rotationExtensionMinutes).toBe(0);
+    expect(summary.totalMissionMinutes).toBe(180);
     expect(summary.depositAmount).toBe(750);
+    expect(oversized.customQuoteRequired).toBe(true);
+    expect(oversized.depositPercent).toBe(0);
+  });
+
+  it('requires custom quotes above School/Youth and Resort standard capacities', () => {
+    const school = calculateBookingSummary(packageById('school-youth-battle'), 21);
+    const resort = calculateBookingSummary(packageById('resort-guest-experience'), 13);
+    expect(school.customQuoteRequired).toBe(true);
+    expect(school.totalMissionMinutes).toBe(90);
+    expect(school.rotationExtensionMinutes).toBe(0);
+    expect(school.depositPercent).toBe(0);
+    expect(resort.customQuoteRequired).toBe(true);
+    expect(resort.totalMissionMinutes).toBe(90);
+    expect(resort.rotationExtensionMinutes).toBe(0);
+    expect(resort.depositPercent).toBe(0);
   });
 });
 
