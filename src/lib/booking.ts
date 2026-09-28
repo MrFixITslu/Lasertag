@@ -3,7 +3,20 @@ import type { BookingSummary, MissionPackage, CustomerProfile } from '../types';
 export const MIN_PLAYERS = 6;
 export const MAX_CONCURRENT_PLAYERS = 12;
 export const ROTATION_GROUP_SIZE = 6;
+export const MAX_TEAM_SIZE = 6;
 export const ROTATION_EXTENSION_MINUTES = 30;
+export const TEAM_NAMES = [
+  'ALPHA',
+  'BRAVO',
+  'CHARLIE',
+  'DELTA',
+  'ECHO',
+  'FOXTROT',
+  'GOLF',
+  'HOTEL',
+  'INDIA',
+  'JULIET'
+] as const;
 export const OPERATIONAL_BUFFER_MINUTES = 60;
 
 export const fixedStartTimes = [
@@ -26,6 +39,60 @@ export function isPrivateDeploymentVenue(venueType: string) {
   return ['home', 'field', 'other'].includes(venueType);
 }
 
+/**
+ * Split participants into the smallest number of teams that keeps every team
+ * at or below maxTeamSize. Players are then distributed evenly so the largest
+ * and smallest teams differ by at most one player.
+ */
+export function buildBalancedTeams(players: number, maxTeamSize = MAX_TEAM_SIZE) {
+  const safeMax = Math.max(2, Math.floor(maxTeamSize));
+  const normalizedPlayers = Math.max(
+    2,
+    Math.floor(Number.isFinite(players) ? players : 2)
+  );
+  const teamCount = Math.max(2, Math.ceil(normalizedPlayers / safeMax));
+  const baseSize = Math.floor(normalizedPlayers / teamCount);
+  const remainder = normalizedPlayers % teamCount;
+
+  return Array.from(
+    { length: teamCount },
+    (_, index) => baseSize + (index < remainder ? 1 : 0)
+  );
+}
+
+/**
+ * Produce a deterministic round-robin match order. For even team counts, the
+ * circle method naturally gives each team a rest while the other match in that
+ * round is played. Odd team counts use a bye slot.
+ */
+export function buildMatchRotation(teamCount: number): Array<[number, number]> {
+  const normalizedCount = Math.max(2, Math.floor(teamCount));
+  const participants: Array<number | null> = Array.from(
+    { length: normalizedCount },
+    (_, index) => index
+  );
+  if (participants.length % 2 === 1) participants.push(null);
+
+  const rotation = [...participants];
+  const matches: Array<[number, number]> = [];
+  const rounds = rotation.length - 1;
+
+  for (let round = 0; round < rounds; round += 1) {
+    for (let index = 0; index < rotation.length / 2; index += 1) {
+      const left = rotation[index];
+      const right = rotation[rotation.length - 1 - index];
+      if (left !== null && right !== null) matches.push([left, right]);
+    }
+
+    const fixed = rotation[0];
+    const tail = rotation.slice(1);
+    tail.unshift(tail.pop()!);
+    rotation.splice(0, rotation.length, fixed, ...tail);
+  }
+
+  return matches;
+}
+
 export function calculateBookingSummary(
   mission: MissionPackage,
   players: number,
@@ -39,7 +106,10 @@ export function calculateBookingSummary(
     )
   );
 
-  const squadCount = Math.ceil(normalizedPlayers / ROTATION_GROUP_SIZE);
+  const teamSizes = buildBalancedTeams(normalizedPlayers);
+  const teamCount = teamSizes.length;
+  const squadCount = teamCount;
+  const matchRotation = buildMatchRotation(teamCount);
   const rotationsRequired = normalizedPlayers > mission.maxConcurrentPlayers;
   const rotationIncludedPlayers = Math.max(
     mission.maxConcurrentPlayers,
@@ -95,6 +165,9 @@ export function calculateBookingSummary(
     totalBlockMinutes:
       mission.durationMinutes + rotationExtensionMinutes + operationalBufferMinutes,
     squadCount,
+    teamCount,
+    teamSizes,
+    matchRotation,
     rotationsRequired,
     rotationsIncluded,
     customQuoteRequired,
