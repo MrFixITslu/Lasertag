@@ -230,7 +230,7 @@ function BookingApp() {
       )}
 
       <main className="page-frame">
-        <p className="demo-note" role="status">Standard package pricing is shown. Availability, travel outside the Gros Islet/Castries core area, venue requirements and custom event arrangements are confirmed by our team; no online payment is taken.</p>
+        <p className="demo-note" role="status">Standard package pricing and customer play time are shown. Scheduling buffers cover setup and turnaround and are not extra play time. Availability, travel outside the Gros Islet/Castries core area, venue requirements and custom arrangements are confirmed by our team; no online payment is taken.</p>
         {submitError && <p className="prototype-warning" role="alert">{submitError}</p>}
         {stage === 'mission' && (
           <MissionSelect
@@ -407,7 +407,7 @@ function MissionSelect({
                 <strong>{money(mission.price, mission.currency)}</strong>
               </div>
               <div>
-                <span className="meta-label">BASE TIME</span>
+                <span className="meta-label">{mission.timeLabel || 'BASE TIME'}</span>
                 <strong>{formatDuration(mission.durationMinutes)}</strong>
               </div>
               <div className="deploy-link">
@@ -524,9 +524,11 @@ function SquadBuilder({
             <div>
               <strong>ROTATION PROTOCOL</strong>
               <span>
-                {mission.rotationExtensionMinutes === 0
-                  ? 'Planned rotations are included in this package.'
-                  : `Additional groups beyond ${mission.rotationIncludedPlayers ?? mission.maxConcurrentPlayers} players add ${formatDuration(mission.rotationExtensionMinutes ?? 30)} per started rotation group.`}
+                {summary.customQuoteRequired
+                  ? mission.customQuoteMessage || 'This group size requires a custom quotation.'
+                  : mission.rotationExtensionMinutes === 0
+                    ? 'Planned rotations stay inside the purchased play window; extra time is not added automatically.'
+                    : `Additional groups beyond ${mission.rotationIncludedPlayers ?? mission.maxConcurrentPlayers} players add ${formatDuration(mission.rotationExtensionMinutes ?? 30)} per started rotation group.`}
               </span>
             </div>
           </div>
@@ -556,18 +558,24 @@ function SquadBuilder({
             ))}
           </div>
 
-          <div className={`rotation-status ${summary.rotationsRequired ? 'warning' : 'clear'}`}>
-            {summary.rotationsRequired ? <RotateCcw size={17} /> : <BadgeCheck size={17} />}
+          <div className={`rotation-status ${summary.customQuoteRequired || summary.rotationsRequired ? 'warning' : 'clear'}`}>
+            {summary.customQuoteRequired || summary.rotationsRequired ? <RotateCcw size={17} /> : <BadgeCheck size={17} />}
             <div>
               <strong>
-                {summary.rotationsRequired ? 'ROTATIONS REQUIRED' : 'FULL SIMULTANEOUS DEPLOYMENT'}
+                {summary.customQuoteRequired
+                  ? 'CUSTOM QUOTE REQUIRED'
+                  : summary.rotationsRequired
+                    ? 'ROTATIONS REQUIRED'
+                    : 'FULL SIMULTANEOUS DEPLOYMENT'}
               </strong>
               <span>
-                {summary.rotationsRequired
-                  ? summary.rotationExtensionMinutes
-                    ? `Mission extended by ${formatDuration(summary.rotationExtensionMinutes)}.`
-                    : 'Planned rotations are already included in this package.'
-                  : 'Your group fits within the 12-player active capacity.'}
+                {summary.customQuoteRequired
+                  ? mission.customQuoteMessage || 'Mission Control will configure the format and price for this group size.'
+                  : summary.rotationsRequired
+                    ? summary.rotationExtensionMinutes
+                      ? `Mission extended by ${formatDuration(summary.rotationExtensionMinutes)}.`
+                      : 'Planned rotations stay within the purchased play window.'
+                    : 'Your group fits within the 12-player active capacity.'}
               </span>
             </div>
           </div>
@@ -902,32 +910,39 @@ function ReviewStep({
           <BriefRow label="Date" value={draft.date} />
           <BriefRow label="Start" value={formatTime(draft.time)} />
           <BriefRow label="Mission time" value={formatDuration(summary.totalMissionMinutes)} />
-          <BriefRow label="Ops buffer" value={formatDuration(summary.operationalBufferMinutes)} />
+          <BriefRow label="Scheduling buffer" value={`${formatDuration(summary.operationalBufferMinutes)} // setup & turnaround, not play time`} />
           <BriefRow label="Deployment" value={`${venueLabel} // ${draft.area}`} />
           <BriefRow label="Weather" value={draft.weatherFlexible ? 'Light-rain flexible' : 'Dry-weather preference'} />
           <BriefRow label="Operator" value={draft.customer.fullName} />
-          {summary.additionalPlayerPrice > 0 && (
+          {!summary.customQuoteRequired && summary.additionalPlayerPrice > 0 && (
             <BriefRow label="Additional players" value={money(summary.additionalPlayerPrice, summary.currency)} />
           )}
-          {summary.activationFee > 0 && (
+          {!summary.customQuoteRequired && summary.activationFee > 0 && (
             <BriefRow label="Activation fee" value={money(summary.activationFee, summary.currency)} />
           )}
-          {summary.minimumAdjustment > 0 && (
+          {!summary.customQuoteRequired && summary.minimumAdjustment > 0 && (
             <BriefRow label="Minimum booking adjustment" value={money(summary.minimumAdjustment, summary.currency)} />
           )}
-          {summary.depositPercent > 0 && (
+          {!summary.customQuoteRequired && summary.depositPercent > 0 && (
             <BriefRow label={`Deposit (${summary.depositPercent}%)`} value={money(summary.depositAmount, summary.currency)} />
           )}
           <BriefRow label="Travel fee" value="EC$75–EC$200 may apply outside Gros Islet/Castries" />
 
-          {summary.privateDeploymentMinimumApplied && (
+          {summary.customQuoteRequired && (
+            <div className="brief-alert">
+              <ShieldCheck size={16} />
+              {mission.customQuoteMessage || 'This group size requires a custom quotation before the booking can be confirmed.'}
+            </div>
+          )}
+
+          {!summary.customQuoteRequired && summary.privateDeploymentMinimumApplied && (
             <div className="brief-alert">
               <ShieldCheck size={16} />
               The EC$450 private mobile deployment minimum applies to this booking.
             </div>
           )}
 
-          {summary.rotationsRequired && (
+          {!summary.customQuoteRequired && summary.rotationsRequired && (
             <div className="brief-alert">
               <RotateCcw size={16} />
               {summary.rotationExtensionMinutes
@@ -937,9 +952,23 @@ function ReviewStep({
           )}
 
           <div className="brief-total">
-            <span>{mission.bookingMode === 'instant' ? 'ESTIMATED TOTAL' : 'WORKING ESTIMATE'}</span>
-            <strong>{money(summary.totalPrice, summary.currency)}</strong>
-            {mission.bookingMode === 'request' && <small>Final scope confirmed by Mission Control.</small>}
+            <span>
+              {summary.customQuoteRequired
+                ? 'PRICING STATUS'
+                : mission.bookingMode === 'instant'
+                  ? 'ESTIMATED TOTAL'
+                  : 'WORKING ESTIMATE'}
+            </span>
+            <strong>
+              {summary.customQuoteRequired ? 'CUSTOM QUOTE' : money(summary.totalPrice, summary.currency)}
+            </strong>
+            {(summary.customQuoteRequired || mission.bookingMode === 'request') && (
+              <small>
+                {summary.customQuoteRequired
+                  ? 'Mission Control will confirm the format, timing and final price.'
+                  : 'Final scope confirmed by Mission Control.'}
+              </small>
+            )}
           </div>
         </div>
 
@@ -953,8 +982,8 @@ function ReviewStep({
                 Submit your request for our team to review. This does not reserve a slot or charge you.
               </p>
               <div className="payment-total">
-                <span>ESTIMATED TOTAL</span>
-                <strong>{money(summary.totalPrice, summary.currency)}</strong>
+                <span>{summary.customQuoteRequired ? 'PRICING STATUS' : 'ESTIMATED TOTAL'}</span>
+                <strong>{summary.customQuoteRequired ? 'CUSTOM QUOTE' : money(summary.totalPrice, summary.currency)}</strong>
               </div>
               <button
                 type="button"
@@ -963,12 +992,14 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <WalletCards size={18} />
-                {submitting ? 'SENDING…' : 'SUBMIT BOOKING REQUEST'}
+                {submitting ? 'SENDING…' : summary.customQuoteRequired ? 'SUBMIT QUOTE REQUEST' : 'SUBMIT BOOKING REQUEST'}
               </button>
               <small className="prototype-warning">
-                No payment is taken online. {summary.depositPercent > 0
-                  ? `Once confirmed, the booking deposit is ${summary.depositPercent}% (${money(summary.depositAmount, summary.currency)}).`
-                  : 'We will contact you to confirm your booking.'}
+                No payment is taken online. {summary.customQuoteRequired
+                  ? 'This group size must be quoted before any deposit is requested.'
+                  : summary.depositPercent > 0
+                    ? `Once confirmed, the booking deposit is ${summary.depositPercent}% (${money(summary.depositAmount, summary.currency)}).`
+                    : 'We will contact you to confirm your booking.'}
               </small>
             </>
           ) : (
@@ -980,10 +1011,10 @@ function ReviewStep({
                 Corporate and resort deployments need a final operational review before payment and confirmation.
               </p>
               <div className="payment-total">
-                <span>WORKING ESTIMATE</span>
-                <strong>{money(summary.totalPrice, summary.currency)}</strong>
+                <span>{summary.customQuoteRequired ? 'PRICING STATUS' : 'WORKING ESTIMATE'}</span>
+                <strong>{summary.customQuoteRequired ? 'CUSTOM QUOTE' : money(summary.totalPrice, summary.currency)}</strong>
               </div>
-              {summary.depositPercent > 0 && (
+              {!summary.customQuoteRequired && summary.depositPercent > 0 && (
                 <small className="prototype-warning">
                   Once the scope is confirmed, the booking deposit is {summary.depositPercent}% ({money(summary.depositAmount, summary.currency)}).
                 </small>
@@ -995,7 +1026,7 @@ function ReviewStep({
                 disabled={submitting}
               >
                 <Radar size={18} />
-                {submitting ? 'SENDING…' : 'SUBMIT BOOKING REQUEST'}
+                {submitting ? 'SENDING…' : summary.customQuoteRequired ? 'SUBMIT QUOTE REQUEST' : 'SUBMIT BOOKING REQUEST'}
               </button>
             </>
           )}
@@ -1050,12 +1081,18 @@ function MissionMetrics({
         <strong>{summary.rotationExtensionMinutes ? `+${formatDuration(summary.rotationExtensionMinutes)}` : 'NONE'}</strong>
       </div>
       <div>
-        <span>OPS BUFFER</span>
+        <span>SCHEDULING BUFFER</span>
         <strong>+{formatDuration(summary.operationalBufferMinutes)}</strong>
       </div>
       <div>
-        <span>{mission.bookingMode === 'request' ? 'WORKING ESTIMATE' : 'ESTIMATED TOTAL'}</span>
-        <strong>{money(summary.totalPrice, summary.currency)}</strong>
+        <span>
+          {summary.customQuoteRequired
+            ? 'PRICING STATUS'
+            : mission.bookingMode === 'request'
+              ? 'WORKING ESTIMATE'
+              : 'ESTIMATED TOTAL'}
+        </span>
+        <strong>{summary.customQuoteRequired ? 'CUSTOM QUOTE' : money(summary.totalPrice, summary.currency)}</strong>
       </div>
     </div>
   );

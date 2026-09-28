@@ -17,6 +17,7 @@ export interface MissionPackage {
   description: string;
   highlights: string[];
   priceLabel?: string;
+  timeLabel?: string;
   includedPlayers?: number;
   extraPlayerPrice?: number;
   minimumCharge?: number;
@@ -24,6 +25,10 @@ export interface MissionPackage {
   depositPercent?: number;
   privateDepositPercent?: number;
   privateDeploymentMinimum?: number;
+  operationalBufferMinutes?: number;
+  privateOperationalBufferMinutes?: number;
+  standardPricingMaxPlayers?: number;
+  customQuoteMessage?: string;
   rotationIncludedPlayers?: number;
   rotationGroupSize?: number;
   rotationExtensionMinutes?: number;
@@ -58,6 +63,7 @@ export interface BookingSummary {
   squadCount: number;
   rotationsRequired: boolean;
   rotationsIncluded: boolean;
+  customQuoteRequired: boolean;
   packagePrice: number;
   additionalPlayerPrice: number;
   activationFee: number;

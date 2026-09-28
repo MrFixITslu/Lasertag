@@ -3,8 +3,8 @@ import type { MissionPackage } from '../types';
 /**
  * Commercial package configuration.
  *
- * Keep pricing, inclusions, deposits and timing here so the public site,
- * booking calculator and server all use the same commercial rules.
+ * Base duration is customer play time. Operational buffers protect setup,
+ * reset and pack-down capacity but are not sold as additional play time.
  */
 export const missions: MissionPackage[] = [
   {
@@ -22,6 +22,11 @@ export const missions: MissionPackage[] = [
     maxConcurrentPlayers: 12,
     privateDeploymentMinimum: 450,
     privateDepositPercent: 40,
+    operationalBufferMinutes: 15,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 12,
+    rotationGroupSize: 12,
+    rotationExtensionMinutes: 15,
     description: 'A fast 15-minute battle for public/open play or a compact private mission.',
     highlights: ['15-min battle', '6+ players', 'Private deployment minimum EC$450']
   },
@@ -40,8 +45,14 @@ export const missions: MissionPackage[] = [
     maxConcurrentPlayers: 12,
     minimumCharge: 480,
     privateDepositPercent: 40,
+    operationalBufferMinutes: 30,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 24,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 24,
+    customQuoteMessage: 'Groups above 24 need a custom format and quotation.',
     description: 'A full hour of rotating game modes and team battles with an eight-player minimum.',
-    highlights: ['60-minute mission', 'EC$480 minimum', '8+ players']
+    highlights: ['60-minute mission', 'EC$480 minimum', '8–24 players standard']
   },
   {
     id: 'birthday-strike',
@@ -59,8 +70,14 @@ export const missions: MissionPackage[] = [
     includedPlayers: 8,
     extraPlayerPrice: 50,
     depositPercent: 40,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 12,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 12,
+    customQuoteMessage: 'Birthday Strike standard pricing covers up to 12 players. Larger groups need a custom quote.',
     description: 'A private one-hour birthday mission with eight players included.',
-    highlights: ['Includes 8 players', '+EC$50 extra player', '40% deposit']
+    highlights: ['Includes 8 players', '+EC$50 extra up to 12', '40% deposit']
   },
   {
     id: 'birthday-battle',
@@ -78,8 +95,14 @@ export const missions: MissionPackage[] = [
     includedPlayers: 10,
     extraPlayerPrice: 50,
     depositPercent: 40,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 18,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 18,
+    customQuoteMessage: 'Birthday Battle standard pricing covers up to 18 players. Larger groups need a custom quote.',
     description: 'A 90-minute private birthday battle with more time for modes and team play.',
-    highlights: ['Includes 10 players', '+EC$50 extra player', '40% deposit']
+    highlights: ['Includes 10 players', '+EC$50 extra up to 18', '40% deposit']
   },
   {
     id: 'ultimate-birthday-tournament',
@@ -97,8 +120,14 @@ export const missions: MissionPackage[] = [
     includedPlayers: 12,
     extraPlayerPrice: 45,
     depositPercent: 40,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 24,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 24,
+    customQuoteMessage: 'Ultimate Birthday Tournament standard pricing covers up to 24 players. Larger groups need a custom quote.',
     description: 'A two-hour tournament-style birthday operation built for teams, rotations and a big finish.',
-    highlights: ['Includes 12 players', '+EC$45 extra player', '40% deposit']
+    highlights: ['Includes 12 players', '+EC$45 extra up to 24', '40% deposit']
   },
   {
     id: 'school-youth-battle',
@@ -114,11 +143,15 @@ export const missions: MissionPackage[] = [
     minPlayers: 6,
     maxConcurrentPlayers: 12,
     includedPlayers: 20,
-    extraPlayerPrice: 30,
     depositPercent: 40,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
     rotationIncludedPlayers: 20,
-    description: 'A supervised rotation format for schools, youth groups and organised clubs.',
-    highlights: ['Includes up to 20', '+EC$30 extra participant', '40% deposit']
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 20,
+    customQuoteMessage: 'School / Youth Battle standard pricing covers up to 20 participants. Larger groups need a custom quote.',
+    description: 'A supervised 90-minute rotation format for schools, youth groups and organised clubs.',
+    highlights: ['Includes up to 20', '90-minute format', 'Custom quote 21+']
   },
   {
     id: 'community-festival-play',
@@ -129,15 +162,18 @@ export const missions: MissionPackage[] = [
     pricingMode: 'per_participant',
     price: 30,
     priceLabel: 'PER PLAYER',
+    timeLabel: 'ROUND TIME',
     currency: 'XCD',
     durationMinutes: 15,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
     activationFee: 500,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
     rotationIncludedPlayers: 12,
     rotationGroupSize: 12,
     rotationExtensionMinutes: 15,
-    description: 'Event activation with short 15-minute rounds designed to move groups through efficiently.',
+    description: 'Event activation with 15-minute rounds designed to move groups through efficiently.',
     highlights: ['EC$500 activation', 'EC$30/player', '15-min rounds']
   },
   {
@@ -156,8 +192,14 @@ export const missions: MissionPackage[] = [
     includedPlayers: 12,
     extraPlayerPrice: 65,
     depositPercent: 50,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 18,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 18,
+    customQuoteMessage: 'Corporate Team Battle standard pricing covers up to 18 players. Larger groups need a custom quote.',
     description: 'A customizable 90-minute team-building mission for companies and staff groups.',
-    highlights: ['Includes 12 players', '+EC$65 extra player', '50% deposit']
+    highlights: ['Includes 12 players', '+EC$65 extra up to 18', '50% deposit']
   },
   {
     id: 'corporate-tournament',
@@ -173,11 +215,15 @@ export const missions: MissionPackage[] = [
     minPlayers: 6,
     maxConcurrentPlayers: 12,
     includedPlayers: 24,
-    extraPlayerPrice: 50,
     depositPercent: 50,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
     rotationIncludedPlayers: 24,
-    description: 'A tournament operation for larger company teams with planned rotations built into the format.',
-    highlights: ['Includes up to 24', '+EC$50 extra player', '50% deposit']
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 24,
+    customQuoteMessage: 'Corporate Tournament standard pricing covers up to 24 players. Larger groups need a custom quote.',
+    description: 'A three-hour tournament operation for larger company teams with planned rotations built into the format.',
+    highlights: ['Includes up to 24', '3-hour tournament', 'Custom quote 25+']
   },
   {
     id: 'resort-guest-experience',
@@ -192,9 +238,16 @@ export const missions: MissionPackage[] = [
     durationMinutes: 90,
     minPlayers: 6,
     maxConcurrentPlayers: 12,
+    includedPlayers: 12,
     depositPercent: 50,
+    operationalBufferMinutes: 60,
+    privateOperationalBufferMinutes: 60,
+    rotationIncludedPlayers: 12,
+    rotationExtensionMinutes: 0,
+    standardPricingMaxPlayers: 12,
+    customQuoteMessage: 'The EC$900 resort activation covers the standard group format. Groups above 12 require a custom quotation.',
     description: 'A tailored 90-minute guest activation for hotels and resorts, with larger or recurring programs quoted separately.',
-    highlights: ['From EC$900', '90-minute base', '50% deposit']
+    highlights: ['From EC$900', '90-minute activation', 'Custom quote 13+']
   }
 ];
 

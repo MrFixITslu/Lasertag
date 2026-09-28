@@ -52,6 +52,10 @@ export function calculateBookingSummary(
   const extraRotationGroups = Math.ceil(overflowPlayers / rotationGroupSize);
   const rotationExtensionMinutes = extraRotationGroups * rotationMinutesPerGroup;
   const rotationsIncluded = rotationsRequired && rotationExtensionMinutes === 0;
+  const customQuoteRequired = Boolean(
+    mission.standardPricingMaxPlayers &&
+      normalizedPlayers > mission.standardPricingMaxPlayers
+  );
 
   let packagePrice = mission.price;
   let additionalPlayerPrice = 0;
@@ -71,21 +75,29 @@ export function calculateBookingSummary(
   const minimumAdjustment = moneyRound(pricedSubtotal - subtotalBeforeMinimum);
   const activationFee = moneyRound(mission.activationFee ?? 0);
   const totalPrice = moneyRound(pricedSubtotal + activationFee);
-  const depositPercent =
-    mission.depositPercent ??
-    (options.privateDeployment ? mission.privateDepositPercent ?? 0 : 0);
+  const configuredBuffer =
+    options.privateDeployment
+      ? mission.privateOperationalBufferMinutes ?? mission.operationalBufferMinutes
+      : mission.operationalBufferMinutes;
+  const operationalBufferMinutes =
+    configuredBuffer ?? OPERATIONAL_BUFFER_MINUTES;
+  const depositPercent = customQuoteRequired
+    ? 0
+    : mission.depositPercent ??
+      (options.privateDeployment ? mission.privateDepositPercent ?? 0 : 0);
   const depositAmount = moneyRound((totalPrice * depositPercent) / 100);
 
   return {
     baseDurationMinutes: mission.durationMinutes,
     rotationExtensionMinutes,
     totalMissionMinutes: mission.durationMinutes + rotationExtensionMinutes,
-    operationalBufferMinutes: OPERATIONAL_BUFFER_MINUTES,
+    operationalBufferMinutes,
     totalBlockMinutes:
-      mission.durationMinutes + rotationExtensionMinutes + OPERATIONAL_BUFFER_MINUTES,
+      mission.durationMinutes + rotationExtensionMinutes + operationalBufferMinutes,
     squadCount,
     rotationsRequired,
     rotationsIncluded,
+    customQuoteRequired,
     packagePrice,
     additionalPlayerPrice,
     activationFee,
