@@ -18,20 +18,63 @@ export const fixedStartTimes = [
   '16:00'
 ] as const;
 
+function moneyRound(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+export function isPrivateDeploymentVenue(venueType: string) {
+  return ['home', 'field', 'other'].includes(venueType);
+}
+
 export function calculateBookingSummary(
   mission: MissionPackage,
-  players: number
+  players: number,
+  options: { privateDeployment?: boolean } = {}
 ): BookingSummary {
-  const normalizedPlayers = Math.min(60, Math.max(mission.minPlayers, Math.floor(Number.isFinite(players) ? players : mission.minPlayers)));
-  const overflowPlayers = Math.max(0, normalizedPlayers - mission.maxConcurrentPlayers);
-  const extraRotationGroups = Math.ceil(overflowPlayers / ROTATION_GROUP_SIZE);
-  const rotationExtensionMinutes = extraRotationGroups * ROTATION_EXTENSION_MINUTES;
-  const squadCount = Math.ceil(normalizedPlayers / ROTATION_GROUP_SIZE);
+  const normalizedPlayers = Math.min(
+    60,
+    Math.max(
+      mission.minPlayers,
+      Math.floor(Number.isFinite(players) ? players : mission.minPlayers)
+    )
+  );
 
-  const totalPrice =
-    mission.pricingMode === 'per_participant'
-      ? Math.round(mission.price * 100) * normalizedPlayers / 100
-      : mission.price;
+  const squadCount = Math.ceil(normalizedPlayers / ROTATION_GROUP_SIZE);
+  const rotationsRequired = normalizedPlayers > mission.maxConcurrentPlayers;
+  const rotationIncludedPlayers = Math.max(
+    mission.maxConcurrentPlayers,
+    mission.rotationIncludedPlayers ?? mission.maxConcurrentPlayers
+  );
+  const rotationGroupSize = mission.rotationGroupSize ?? ROTATION_GROUP_SIZE;
+  const rotationMinutesPerGroup =
+    mission.rotationExtensionMinutes ?? ROTATION_EXTENSION_MINUTES;
+  const overflowPlayers = Math.max(0, normalizedPlayers - rotationIncludedPlayers);
+  const extraRotationGroups = Math.ceil(overflowPlayers / rotationGroupSize);
+  const rotationExtensionMinutes = extraRotationGroups * rotationMinutesPerGroup;
+  const rotationsIncluded = rotationsRequired && rotationExtensionMinutes === 0;
+
+  let packagePrice = mission.price;
+  let additionalPlayerPrice = 0;
+
+  if (mission.pricingMode === 'per_participant') {
+    packagePrice = moneyRound(mission.price * normalizedPlayers);
+  } else if (mission.includedPlayers && mission.extraPlayerPrice) {
+    const extraPlayers = Math.max(0, normalizedPlayers - mission.includedPlayers);
+    additionalPlayerPrice = moneyRound(extraPlayers * mission.extraPlayerPrice);
+  }
+
+  const subtotalBeforeMinimum = moneyRound(packagePrice + additionalPlayerPrice);
+  const privateMinimum =
+    options.privateDeployment ? mission.privateDeploymentMinimum ?? 0 : 0;
+  const effectiveMinimum = Math.max(mission.minimumCharge ?? 0, privateMinimum);
+  const pricedSubtotal = Math.max(subtotalBeforeMinimum, effectiveMinimum);
+  const minimumAdjustment = moneyRound(pricedSubtotal - subtotalBeforeMinimum);
+  const activationFee = moneyRound(mission.activationFee ?? 0);
+  const totalPrice = moneyRound(pricedSubtotal + activationFee);
+  const depositPercent =
+    mission.depositPercent ??
+    (options.privateDeployment ? mission.privateDepositPercent ?? 0 : 0);
+  const depositAmount = moneyRound((totalPrice * depositPercent) / 100);
 
   return {
     baseDurationMinutes: mission.durationMinutes,
@@ -41,7 +84,18 @@ export function calculateBookingSummary(
     totalBlockMinutes:
       mission.durationMinutes + rotationExtensionMinutes + OPERATIONAL_BUFFER_MINUTES,
     squadCount,
-    rotationsRequired: normalizedPlayers > mission.maxConcurrentPlayers,
+    rotationsRequired,
+    rotationsIncluded,
+    packagePrice,
+    additionalPlayerPrice,
+    activationFee,
+    minimumAdjustment,
+    privateDeploymentMinimumApplied:
+      Boolean(options.privateDeployment && mission.privateDeploymentMinimum) &&
+      pricedSubtotal === mission.privateDeploymentMinimum &&
+      mission.privateDeploymentMinimum > subtotalBeforeMinimum,
+    depositPercent,
+    depositAmount,
     totalPrice,
     currency: mission.currency
   };

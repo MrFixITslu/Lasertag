@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateBookingSummary, buildDateChoices, validCustomer } from './booking';
 import type { MissionPackage } from '../types';
+import { missions } from '../data/missions';
 
 const mission: MissionPackage = {
   id: 'test',
@@ -53,6 +54,60 @@ describe('calculateBookingSummary', () => {
   });
 });
 
+
+
+describe('commercial package pricing', () => {
+  const packageById = (id: string) => {
+    const value = missions.find((item) => item.id === id);
+    if (!value) throw new Error(`Missing mission: ${id}`);
+    return value;
+  };
+
+  it('keeps public Quick Battle at per-player pricing', () => {
+    const summary = calculateBookingSummary(packageById('quick-battle'), 6);
+    expect(summary.totalPrice).toBe(180);
+    expect(summary.depositPercent).toBe(0);
+  });
+
+  it('applies the private mobile minimum and deposit to Quick Battle', () => {
+    const summary = calculateBookingSummary(packageById('quick-battle'), 6, {
+      privateDeployment: true
+    });
+    expect(summary.totalPrice).toBe(450);
+    expect(summary.minimumAdjustment).toBe(270);
+    expect(summary.privateDeploymentMinimumApplied).toBe(true);
+    expect(summary.depositPercent).toBe(40);
+    expect(summary.depositAmount).toBe(180);
+  });
+
+  it('enforces the Battle Hour eight-player minimum price', () => {
+    expect(calculateBookingSummary(packageById('battle-hour'), 8).totalPrice).toBe(480);
+  });
+
+  it('charges birthday extras after included players', () => {
+    const summary = calculateBookingSummary(packageById('birthday-strike'), 10);
+    expect(summary.packagePrice).toBe(550);
+    expect(summary.additionalPlayerPrice).toBe(100);
+    expect(summary.totalPrice).toBe(650);
+    expect(summary.depositAmount).toBe(260);
+  });
+
+  it('adds the community activation fee to player pricing', () => {
+    const summary = calculateBookingSummary(packageById('community-festival-play'), 6);
+    expect(summary.packagePrice).toBe(180);
+    expect(summary.activationFee).toBe(500);
+    expect(summary.totalPrice).toBe(680);
+  });
+
+  it('includes planned corporate tournament rotations for 24 players', () => {
+    const summary = calculateBookingSummary(packageById('corporate-tournament'), 24);
+    expect(summary.totalPrice).toBe(1500);
+    expect(summary.rotationsRequired).toBe(true);
+    expect(summary.rotationsIncluded).toBe(true);
+    expect(summary.rotationExtensionMinutes).toBe(0);
+    expect(summary.depositAmount).toBe(750);
+  });
+});
 
 describe('production input boundaries', () => {
   it('uses Saint Lucia calendar dates around UTC midnight and year rollover', () => {

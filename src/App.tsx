@@ -36,7 +36,7 @@ import {
   formatDuration,
   formatTime,
   validCustomer,
-  MIN_PLAYERS
+  isPrivateDeploymentVenue
 } from './lib/booking';
 import type { BookingDraft, MissionPackage } from './types';
 
@@ -122,7 +122,9 @@ function BookingApp() {
   const selectedMission = getMission(draft.missionId);
   const dates = useMemo(() => buildDateChoices(12), []);
   const summary = selectedMission
-    ? calculateBookingSummary(selectedMission, draft.players)
+    ? calculateBookingSummary(selectedMission, draft.players, {
+        privateDeployment: isPrivateDeploymentVenue(draft.venueType)
+      })
     : null;
 
   const activeMissionList = filter === 'instant' ? directBookMissions : requestMissions;
@@ -228,7 +230,7 @@ function BookingApp() {
       )}
 
       <main className="page-frame">
-        <p className="demo-note" role="status">Request a booking — prices and timings are provisional. Our team must confirm your request; no online payment is taken.</p>
+        <p className="demo-note" role="status">Standard package pricing is shown. Availability, travel outside the Gros Islet/Castries core area, venue requirements and custom event arrangements are confirmed by our team; no online payment is taken.</p>
         {submitError && <p className="prototype-warning" role="alert">{submitError}</p>}
         {stage === 'mission' && (
           <MissionSelect
@@ -400,7 +402,7 @@ function MissionSelect({
             <div className="mission-card-footer">
               <div>
                 <span className="meta-label">
-                  {mission.pricingMode === 'per_participant' ? 'PER PLAYER' : mission.bookingMode === 'request' ? 'FROM' : 'ESTIMATED TOTAL'}
+                  {mission.priceLabel || (mission.pricingMode === 'per_participant' ? 'PER PLAYER' : mission.bookingMode === 'request' ? 'FROM' : 'PACKAGE')}
                 </span>
                 <strong>{money(mission.price, mission.currency)}</strong>
               </div>
@@ -420,8 +422,8 @@ function MissionSelect({
       <div className="intel-strip">
         <div>
           <Users size={17} />
-          <span>MINIMUM SQUAD</span>
-          <strong>6 PLAYERS</strong>
+          <span>STARTING SQUAD</span>
+          <strong>FROM 6 PLAYERS</strong>
         </div>
         <div>
           <Crosshair size={17} />
@@ -469,7 +471,7 @@ function SquadBuilder({
         number="02"
         eyebrow="SQUAD CONFIGURATION"
         title="ASSEMBLE YOUR SQUAD."
-        text="Six players form a squad. Up to twelve can battle simultaneously; larger groups rotate through the mission."
+        text="Players are grouped into squads of up to six. Up to twelve can battle simultaneously; larger groups rotate according to the selected package."
       />
 
       <div className="two-column-layout">
@@ -483,8 +485,8 @@ function SquadBuilder({
           <div className="player-counter">
             <button
               type="button"
-              onClick={() => onPlayersChange(Math.max(MIN_PLAYERS, players - 1))}
-              disabled={players <= MIN_PLAYERS}
+              onClick={() => onPlayersChange(Math.max(mission.minPlayers, players - 1))}
+              disabled={players <= mission.minPlayers}
               aria-label="Remove player"
             >
               −
@@ -503,7 +505,9 @@ function SquadBuilder({
           </div>
 
           <div className="quick-counts">
-            {[6, 12, 18, 24, 30].map((count) => (
+            {[mission.minPlayers, 12, 18, 24, 30]
+              .filter((count, index, values) => count >= mission.minPlayers && values.indexOf(count) === index)
+              .map((count) => (
               <button
                 type="button"
                 className={players === count ? 'active' : ''}
@@ -519,7 +523,11 @@ function SquadBuilder({
             <RotateCcw size={18} />
             <div>
               <strong>ROTATION PROTOCOL</strong>
-              <span>Every additional started group of up to 6 players beyond 12 adds 30 minutes.</span>
+              <span>
+                {mission.rotationExtensionMinutes === 0
+                  ? 'Planned rotations are included in this package.'
+                  : `Additional groups beyond ${mission.rotationIncludedPlayers ?? mission.maxConcurrentPlayers} players add ${formatDuration(mission.rotationExtensionMinutes ?? 30)} per started rotation group.`}
+              </span>
             </div>
           </div>
         </div>
@@ -556,8 +564,10 @@ function SquadBuilder({
               </strong>
               <span>
                 {summary.rotationsRequired
-                  ? `Mission extended by ${formatDuration(summary.rotationExtensionMinutes)}.`
-                  : 'Your full group can play within the 12-player active capacity.'}
+                  ? summary.rotationExtensionMinutes
+                    ? `Mission extended by ${formatDuration(summary.rotationExtensionMinutes)}.`
+                    : 'Planned rotations are already included in this package.'
+                  : 'Your group fits within the 12-player active capacity.'}
               </span>
             </div>
           </div>
@@ -688,7 +698,7 @@ function DeploymentStep({
             <MapPin size={16} />
             <div>
               <strong>ISLAND-WIDE SERVICE AREA</strong>
-              <span>Travel charges and venue suitability require operator confirmation.</span>
+              <span>Gros Islet and Castries are the core service area. A travel surcharge of EC$75–EC$200 may apply elsewhere, depending on location; venue suitability is confirmed by our team.</span>
             </div>
           </div>
         </div>
@@ -868,7 +878,7 @@ function ReviewStep({
         title="CONFIRM THE OPERATION."
         text={
           mission.bookingMode === 'instant'
-            ? 'Review your request before sending it to Mission Control. Prices are estimates; the team will confirm availability and arrangements.'
+            ? 'Review your request before sending it to Mission Control. Standard package pricing is shown; the team will confirm availability, travel charges and any venue-specific requirements.'
             : 'Review your request. Corporate and resort operations require a final quotation and confirmation from our team.'
         }
       />
@@ -896,11 +906,33 @@ function ReviewStep({
           <BriefRow label="Deployment" value={`${venueLabel} // ${draft.area}`} />
           <BriefRow label="Weather" value={draft.weatherFlexible ? 'Light-rain flexible' : 'Dry-weather preference'} />
           <BriefRow label="Operator" value={draft.customer.fullName} />
+          {summary.additionalPlayerPrice > 0 && (
+            <BriefRow label="Additional players" value={money(summary.additionalPlayerPrice, summary.currency)} />
+          )}
+          {summary.activationFee > 0 && (
+            <BriefRow label="Activation fee" value={money(summary.activationFee, summary.currency)} />
+          )}
+          {summary.minimumAdjustment > 0 && (
+            <BriefRow label="Minimum booking adjustment" value={money(summary.minimumAdjustment, summary.currency)} />
+          )}
+          {summary.depositPercent > 0 && (
+            <BriefRow label={`Deposit (${summary.depositPercent}%)`} value={money(summary.depositAmount, summary.currency)} />
+          )}
+          <BriefRow label="Travel fee" value="EC$75–EC$200 may apply outside Gros Islet/Castries" />
+
+          {summary.privateDeploymentMinimumApplied && (
+            <div className="brief-alert">
+              <ShieldCheck size={16} />
+              The EC$450 private mobile deployment minimum applies to this booking.
+            </div>
+          )}
 
           {summary.rotationsRequired && (
             <div className="brief-alert">
               <RotateCcw size={16} />
-              Squad rotations add {formatDuration(summary.rotationExtensionMinutes)} to this mission.
+              {summary.rotationExtensionMinutes
+                ? `Squad rotations add ${formatDuration(summary.rotationExtensionMinutes)} to this mission.`
+                : 'Planned squad rotations are included in this package.'}
             </div>
           )}
 
@@ -934,7 +966,9 @@ function ReviewStep({
                 {submitting ? 'SENDING…' : 'SUBMIT BOOKING REQUEST'}
               </button>
               <small className="prototype-warning">
-                No payment is taken. We will contact you to confirm your booking.
+                No payment is taken online. {summary.depositPercent > 0
+                  ? `Once confirmed, the booking deposit is ${summary.depositPercent}% (${money(summary.depositAmount, summary.currency)}).`
+                  : 'We will contact you to confirm your booking.'}
               </small>
             </>
           ) : (
@@ -945,6 +979,15 @@ function ReviewStep({
               <p>
                 Corporate and resort deployments need a final operational review before payment and confirmation.
               </p>
+              <div className="payment-total">
+                <span>WORKING ESTIMATE</span>
+                <strong>{money(summary.totalPrice, summary.currency)}</strong>
+              </div>
+              {summary.depositPercent > 0 && (
+                <small className="prototype-warning">
+                  Once the scope is confirmed, the booking deposit is {summary.depositPercent}% ({money(summary.depositAmount, summary.currency)}).
+                </small>
+              )}
               <button
                 type="button"
                 className="primary-action payment-action"
