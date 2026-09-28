@@ -60,7 +60,11 @@ export interface BookingSummary {
   totalMissionMinutes: number;
   operationalBufferMinutes: number;
   totalBlockMinutes: number;
+  /** Legacy alias retained for existing booking/admin data. */
   squadCount: number;
+  teamCount: number;
+  teamSizes: number[];
+  matchRotation: Array<[number, number]>;
   rotationsRequired: boolean;
   rotationsIncluded: boolean;
   customQuoteRequired: boolean;
