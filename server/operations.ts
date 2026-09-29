@@ -523,6 +523,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
 
   function installRoutes(app: Express, helpers: Helpers) {
     const { fail, text, getBooking } = helpers;
+    const required = <T>(value: T | undefined, message: string): T => {
+      if (!value) fail(404, message);
+      return value as T;
+    };
     const publicMutation = rateLimit({
       windowMs: 15 * 60_000,
       limit: 80,
@@ -559,8 +563,8 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     app.get("/api/portal/:token/join-qr", portal, async (req, res, next) => {
       try {
         const booking = (req as any).portalBooking as Row;
-        const data = eventData(booking.id);
-        if (!data?.joinUrl) fail(404, "Participant registration link is unavailable.");
+        const data = required(eventData(booking.id), "Event registration is unavailable.");
+        if (!data.joinUrl) fail(404, "Participant registration link is unavailable.");
         const svg = await QRCode.toString(data.joinUrl, {
           type: "svg",
           errorCorrectionLevel: "M",
@@ -572,8 +576,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     });
 
     app.get("/api/join/:token", (req, res) => {
-      const booking = inviteBooking(String(req.params.token ?? ""));
-      if (!booking) fail(404, "Participant registration link is invalid or expired.");
+      const booking = required(inviteBooking(String(req.params.token ?? "")), "Participant registration link is invalid or expired.");
       const data = eventData(booking.id);
       const profile = data?.profile;
       res.json({
@@ -630,8 +633,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     });
 
     app.get("/api/checkin/:token", (req, res) => {
-      const participant = checkinParticipant(String(req.params.token ?? ""));
-      if (!participant) fail(404, "Check-in link is invalid or expired.");
+      const participant = required(checkinParticipant(String(req.params.token ?? "")), "Check-in link is invalid or expired.");
       const payload = JSON.parse(participant.payload);
       const profile = db.prepare("SELECT event_name,organization,age_group,event_status FROM event_profiles WHERE booking_id=?").get(participant.booking_id) as Row | undefined;
       res.json({
@@ -655,8 +657,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     app.get("/api/checkin/:token/qr", async (req, res, next) => {
       try {
         const rawToken = String(req.params.token ?? "");
-        const participant = checkinParticipant(rawToken);
-        if (!participant) fail(404, "Check-in link is invalid or expired.");
+        const participant = required(checkinParticipant(rawToken), "Check-in link is invalid or expired.");
         const svg = await QRCode.toString(`${publicOrigin}/checkin/${rawToken}`, {
           type: "svg",
           errorCorrectionLevel: "M",
