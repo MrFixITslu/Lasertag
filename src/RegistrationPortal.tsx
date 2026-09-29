@@ -195,7 +195,7 @@ export default function RegistrationPortal() {
         <label><span>Emergency Phone</span><input required type="tel" maxLength={30} value={profile.emergencyContactPhone} onChange={(e)=>setProfile({...profile,emergencyContactPhone:e.target.value})}/></label>
         <label><span>Goals / Preferences</span><textarea rows={3} maxLength={1000} value={profile.objectives} onChange={(e)=>setProfile({...profile,objectives:e.target.value})}/></label>
         <label><span>Accessibility / Setup Notes</span><textarea rows={3} maxLength={1000} value={profile.accessibilityNotes} onChange={(e)=>setProfile({...profile,accessibilityNotes:e.target.value})}/></label>
-        <label className="tactical-checkbox inline-check"><input type="checkbox" checked={profile.photoConsent} onChange={(e)=>setProfile({...profile,photoConsent:e.target.checked)}/><span className="checkbox-box"><Check size={14}/></span><span>Organizer is open to event photography/media, subject to individual consent where required.</span></label>
+        <label className="tactical-checkbox inline-check"><input type="checkbox" checked={profile.photoConsent} onChange={(e)=>setProfile({...profile,photoConsent:e.target.checked})}/><span className="checkbox-box"><Check size={14}/></span><span>Organizer is open to event photography/media, subject to individual consent where required.</span></label>
         <button className="primary-action" disabled={busy}>SAVE EVENT INFO</button>
       </form>
 
