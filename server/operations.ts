@@ -560,6 +560,19 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       legacyHeaders: false,
       message: { error: "Too many feedback attempts. Please try again later." },
     });
+    const optionalEmail = (value:unknown) => {
+      const email=safeText(value,254).toLowerCase();
+      if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        fail(400,"Enter a valid participant email.");
+      return email;
+    };
+    const phone = (value:unknown, label:string, required=false) => {
+      const result=safeText(value,30);
+      const digits=result.replace(/\D/g,"");
+      if((required||result) && (digits.length<7||digits.length>15||!/^[+\d\s().-]+$/.test(result)))
+        fail(400,`Enter a valid ${label}.`);
+      return result;
+    };
     const finance = (_req:Request,res:Response,next:NextFunction) =>
       res.locals.user?.role === "admin" || Boolean(res.locals.user?.finance)
         ? next()
@@ -634,10 +647,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         participantId,
         booking.id,
         text(req.body.name, "participant name", 120, 2),
-        safeText(req.body.email,254),
-        safeText(req.body.phone,30),
+        optionalEmail(req.body.email),
+        phone(req.body.phone,"participant phone"),
         safeText(req.body.guardianName,120),
-        safeText(req.body.guardianPhone,30),
+        phone(req.body.guardianPhone,"guardian phone"),
         req.body.safetyAcknowledged ? 1 : 0,
         checkin.hash,
         sealSecret(checkin.token),
@@ -702,9 +715,9 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         ? participant.guardian_name
         : safeText(req.body.guardianName,120);
       const guardianPhone = req.body.guardianPhone === undefined
-        ? participant.guardian_phone
-        : safeText(req.body.guardianPhone,30);
-      if (minorGroup && (!guardianName || guardianPhone.replace(/\D/g,"").length < 7))
+        ? phone(participant.guardian_phone,"guardian phone",minorGroup)
+        : phone(req.body.guardianPhone,"guardian phone",minorGroup);
+      if (minorGroup && !guardianName)
         fail(400, "Parent or guardian details are required for youth check-in.");
       db.prepare(`
         UPDATE participants SET waiver_signed=1,checked_in=1,guardian_name=?,guardian_phone=?,updated_at=?
@@ -741,7 +754,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         objectives: text(req.body.objectives ?? "", "event objectives", 1000),
         accessibilityNotes: text(req.body.accessibilityNotes ?? "", "accessibility notes", 1000),
         emergencyContactName: text(req.body.emergencyContactName, "emergency contact name", 120, 2),
-        emergencyContactPhone: text(req.body.emergencyContactPhone, "emergency contact phone", 30, 7),
+        emergencyContactPhone: phone(req.body.emergencyContactPhone, "emergency contact phone", true),
         photoConsent: Boolean(req.body.photoConsent),
       };
       db.prepare(`
@@ -768,8 +781,8 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         INSERT INTO participants(id,booking_id,name,email,phone,guardian_name,guardian_phone,waiver_signed,checkin_hash,checkin_value,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
-        randomUUID(),booking.id,name,safeText(req.body.email,254),safeText(req.body.phone,30),
-        safeText(req.body.guardianName,120),safeText(req.body.guardianPhone,30),
+        randomUUID(),booking.id,name,optionalEmail(req.body.email),phone(req.body.phone,"participant phone"),
+        safeText(req.body.guardianName,120),phone(req.body.guardianPhone,"guardian phone"),
         req.body.waiverSigned ? 1 : 0,checkin.hash,sealSecret(checkin.token),stamp,stamp
       );
       rebalance(booking.id);
@@ -789,10 +802,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         WHERE id=? AND booking_id=?
       `).run(
         name,
-        req.body.email === undefined ? p.email : safeText(req.body.email,254),
-        req.body.phone === undefined ? p.phone : safeText(req.body.phone,30),
+        req.body.email === undefined ? p.email : optionalEmail(req.body.email),
+        req.body.phone === undefined ? p.phone : phone(req.body.phone,"participant phone"),
         req.body.guardianName === undefined ? p.guardian_name : safeText(req.body.guardianName,120),
-        req.body.guardianPhone === undefined ? p.guardian_phone : safeText(req.body.guardianPhone,30),
+        req.body.guardianPhone === undefined ? p.guardian_phone : phone(req.body.guardianPhone,"guardian phone"),
         req.body.waiverSigned === undefined ? p.waiver_signed : (req.body.waiverSigned ? 1 : 0),
         now(),p.id,booking.id
       );
