@@ -388,18 +388,26 @@ export function installKpis(
         ["paid","fulfilled"].includes(order.status) &&
         between(localDay(new Date(order.created_at)))
       );
-      const storeRevenue = storePaid.reduce((sum,row)=>sum+Number(row.total_cents),0);
-      const storeCost = storePaid.reduce((sum,row)=>sum+Number(row.total_cost_cents),0);
       const lowStock = (db.prepare("SELECT COUNT(*) AS n FROM store_products WHERE active=1 AND kind='physical' AND stock_qty<=5").get() as Row).n;
+      const storeCurrencies=[...new Set(storePaid.map((row)=>String(row.currency)))].sort();
       result.store = {
-        cards: [
-          card("storeRevenue","Store paid/fulfilled sales",storeRevenue,null,"money"),
-          card("storeGrossMargin","Store gross margin",storeRevenue-storeCost,null,"money","Store sales minus recorded product cost; excludes overhead and transaction fees."),
-          card("storeOrders","Store paid/fulfilled orders",storePaid.length,null),
+        currencies: storeCurrencies.map((currency)=>{
+          const rows=storePaid.filter((row)=>row.currency===currency);
+          const revenue=rows.reduce((sum,row)=>sum+Number(row.total_cents),0);
+          const cost=rows.reduce((sum,row)=>sum+Number(row.total_cost_cents),0);
+          return {
+            currency,
+            cards:[
+              card("storeRevenue","Store paid/fulfilled sales",revenue,null,"money"),
+              card("storeGrossMargin","Store gross margin",revenue-cost,null,"money","Store sales minus recorded product cost; excludes overhead and transaction fees."),
+              card("storeOrders","Store paid/fulfilled orders",rows.length,null),
+            ],
+          };
+        }),
+        cards:[
           card("storePending","Store pending/confirmed orders",storeOrders.filter((o)=>["pending","confirmed"].includes(o.status)).length,null),
           card("storeLowStock","Low-stock products",lowStock,null,"number","Active physical products with five or fewer units."),
         ],
-        currency: "XCD",
       };
       for (const currency of currencies) {
         const calc = (a: string, b: string) => {
