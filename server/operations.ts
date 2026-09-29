@@ -594,8 +594,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     });
 
     app.post("/api/join/:token", publicMutation, (req, res) => {
-      const booking = inviteBooking(String(req.params.token ?? ""));
-      if (!booking) fail(404, "Participant registration link is invalid or expired.");
+      const booking = required(
+        inviteBooking(String(req.params.token ?? "")),
+        "Participant registration link is invalid or expired.",
+      );
       ensureUnlocked(booking.id);
       const payload = JSON.parse(booking.payload);
       const expected = Math.min(60, Number(payload.draft?.players ?? 0));
@@ -669,8 +671,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     });
 
     app.post("/api/checkin/:token", publicMutation, (req, res) => {
-      const participant = checkinParticipant(String(req.params.token ?? ""));
-      if (!participant) fail(404, "Check-in link is invalid or expired.");
+      const participant = required(
+        checkinParticipant(String(req.params.token ?? "")),
+        "Check-in link is invalid or expired.",
+      );
       if (req.body.safetyAcknowledged !== true)
         fail(400, "Safety acknowledgement is required before check-in.");
       const profile = db.prepare("SELECT age_group,roster_locked FROM event_profiles WHERE booking_id=?").get(participant.booking_id) as Row | undefined;
