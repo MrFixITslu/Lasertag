@@ -262,6 +262,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     const active = participants.filter((item) => item.active);
     const sizes = balancedRosterSizes(active.length);
     return {
+      serverNow: now(),
       bookingId,
       reference: booking.reference,
       status: booking.status,
