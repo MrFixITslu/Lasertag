@@ -658,11 +658,22 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         stamp,
       );
       rebalance(booking.id);
+      const profile = db.prepare(
+        "SELECT event_name,organization,age_group FROM event_profiles WHERE booking_id=?"
+      ).get(booking.id) as Row | undefined;
       res.status(201).json({
         registered: true,
         participantId,
         checkInUrl: `${publicOrigin}/checkin/${checkin.token}`,
-        event: eventData(booking.id),
+        event: {
+          reference: booking.reference,
+          date: booking.date,
+          time: booking.time,
+          mission: payload.mission?.name ?? "",
+          eventName: profile?.event_name ?? "",
+          organization: profile?.organization ?? "",
+          ageGroup: profile?.age_group ?? "mixed",
+        },
       });
     });
 
