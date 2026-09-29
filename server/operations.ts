@@ -839,6 +839,11 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       const bookingId = String(req.params.bookingId);
       getBooking(bookingId);
       if (typeof req.body.locked !== "boolean") fail(400, "Choose whether teams are locked.");
+      if (req.body.locked) {
+        const plan = eventData(bookingId, true);
+        if (plan?.teamBalanceWarning)
+          fail(409, "Balance the teams and assign every active participant before locking the final roster.");
+      }
       db.prepare("UPDATE event_profiles SET roster_locked=?,updated_at=? WHERE booking_id=?")
         .run(req.body.locked ? 1 : 0, now(), bookingId);
       res.json(eventData(bookingId, true));
