@@ -135,6 +135,18 @@ function validateDraft(input: unknown) {
         .slice(0, Math.min(60, players))
         .map((name) => name.slice(0, 120))
     : [];
+  const emergencyContactPhone = text(
+    rawEvent.emergencyContactPhone ?? customer.phone,
+    "emergency contact phone",
+    30,
+    7,
+  );
+  if (
+    emergencyContactPhone.replace(/\D/g, "").length < 7 ||
+    emergencyContactPhone.replace(/\D/g, "").length > 15 ||
+    !/^[+\d\s().-]+$/.test(emergencyContactPhone)
+  )
+    fail(400, "Enter a valid emergency contact phone number.");
   const draft: BookingDraft = {
     missionId: mission.id,
     players,
@@ -156,12 +168,7 @@ function validateDraft(input: unknown) {
         120,
         2,
       ),
-      emergencyContactPhone: text(
-        rawEvent.emergencyContactPhone ?? customer.phone,
-        "emergency contact phone",
-        30,
-        7,
-      ),
+      emergencyContactPhone,
       objectives: text(rawEvent.objectives ?? "", "objectives", 1000),
       accessibilityNotes: text(rawEvent.accessibilityNotes ?? "", "accessibility notes", 1000),
       photoConsent: Boolean(rawEvent.photoConsent),
