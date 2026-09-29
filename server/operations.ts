@@ -71,7 +71,52 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS participants_booking ON participants(booking_id,active,team_index);
+    CREATE TABLE IF NOT EXISTS equipment(
+      code TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'available',
+      battery INTEGER NOT NULL DEFAULT 100,
+      notes TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS event_rounds(
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      round_no INTEGER NOT NULL,
+      team_a INTEGER NOT NULL,
+      team_b INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      started_at TEXT NOT NULL DEFAULT '',
+      elapsed_seconds INTEGER NOT NULL DEFAULT 0,
+      ended_at TEXT NOT NULL DEFAULT '',
+      score_a INTEGER NOT NULL DEFAULT 0,
+      score_b INTEGER NOT NULL DEFAULT 0,
+      objective_a INTEGER NOT NULL DEFAULT 0,
+      objective_b INTEGER NOT NULL DEFAULT 0,
+      notes TEXT NOT NULL DEFAULT '',
+      UNIQUE(booking_id,round_no)
+    );
+    CREATE INDEX IF NOT EXISTS rounds_booking ON event_rounds(booking_id,round_no);
+    CREATE TABLE IF NOT EXISTS event_incidents(
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      note TEXT NOT NULL,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      resolved_at TEXT NOT NULL DEFAULT ''
+    );
   `);
+  if (!(db.prepare("PRAGMA table_info(participants)").all() as Row[]).some((column) => column.name === "equipment_code")) {
+    db.exec("ALTER TABLE participants ADD COLUMN equipment_code TEXT NOT NULL DEFAULT ''");
+  }
+  const equipmentStamp = now();
+  for (let number = 1; number <= 12; number += 1) {
+    const code = `FALCON-${String(number).padStart(2, "0")}`;
+    db.prepare("INSERT OR IGNORE INTO equipment(code,status,battery,notes,updated_at) VALUES(?,?,?,?,?)")
+      .run(code,"available",100,"",equipmentStamp);
+  }
 
   function newPortalToken(bookingId: string) {
     const token = randomBytes(32).toString("hex");
@@ -165,6 +210,44 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     `).get(digest(rawToken)) as Row | undefined;
   }
 
+  function leaderboard(bookingId: string) {
+    const rounds = db.prepare(
+      "SELECT team_a,team_b,score_a,score_b,objective_a,objective_b,status FROM event_rounds WHERE booking_id=? AND status='completed'"
+    ).all(bookingId) as Row[];
+    const table = new Map<number, { teamIndex:number; played:number; wins:number; draws:number; losses:number; points:number; scored:number; conceded:number; objectives:number }>();
+    const ensure = (teamIndex: number) => {
+      if (!table.has(teamIndex)) table.set(teamIndex,{teamIndex,played:0,wins:0,draws:0,losses:0,points:0,scored:0,conceded:0,objectives:0});
+      return table.get(teamIndex)!;
+    };
+    for (const round of rounds) {
+      if (round.team_a < 0 || round.team_b < 0) continue;
+      const a=ensure(round.team_a), b=ensure(round.team_b);
+      a.played++; b.played++;
+      a.scored += round.score_a; a.conceded += round.score_b; a.objectives += round.objective_a;
+      b.scored += round.score_b; b.conceded += round.score_a; b.objectives += round.objective_b;
+      if (round.score_a > round.score_b) { a.wins++; b.losses++; a.points += 3; }
+      else if (round.score_b > round.score_a) { b.wins++; a.losses++; b.points += 3; }
+      else { a.draws++; b.draws++; a.points++; b.points++; }
+    }
+    return [...table.values()].sort((a,b) =>
+      b.points-a.points || (b.scored-b.conceded)-(a.scored-a.conceded) || b.objectives-a.objectives || a.teamIndex-b.teamIndex
+    );
+  }
+
+  function roundData(bookingId: string) {
+    const stamp = Date.now();
+    return (db.prepare("SELECT * FROM event_rounds WHERE booking_id=? ORDER BY round_no").all(bookingId) as Row[]).map((row) => {
+      const liveExtra = row.status === "live" && row.started_at ? Math.max(0, Math.floor((stamp - Date.parse(row.started_at))/1000)) : 0;
+      return {
+        id: row.id, roundNo: row.round_no, teamA: row.team_a, teamB: row.team_b,
+        mode: row.mode, durationSeconds: row.duration_seconds, status: row.status,
+        startedAt: row.started_at, elapsedSeconds: row.elapsed_seconds + liveExtra,
+        endedAt: row.ended_at, scoreA: row.score_a, scoreB: row.score_b,
+        objectiveA: row.objective_a, objectiveB: row.objective_b, notes: row.notes,
+      };
+    });
+  }
+
   function eventData(bookingId: string, includePrivate = false) {
     const booking = db.prepare("SELECT * FROM bookings WHERE id=?").get(bookingId) as Row | undefined;
     if (!booking) return undefined;
@@ -173,7 +256,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     const participants = db.prepare(`
       SELECT id,name,email,phone,guardian_name AS guardianName,guardian_phone AS guardianPhone,
              waiver_signed AS waiverSigned,checked_in AS checkedIn,team_index AS teamIndex,
-             active,created_at AS createdAt,updated_at AS updatedAt
+             equipment_code AS equipmentCode,active,created_at AS createdAt,updated_at AS updatedAt
       FROM participants WHERE booking_id=? ORDER BY active DESC,team_index,created_at,id
     `).all(bookingId) as Row[];
     const active = participants.filter((item) => item.active);
@@ -210,6 +293,11 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       })),
       registeredPlayers: active.length,
       rosterTeamSizes: sizes,
+      rounds: roundData(bookingId),
+      leaderboard: leaderboard(bookingId),
+      equipment: db.prepare("SELECT code,status,battery,notes,updated_at AS updatedAt FROM equipment ORDER BY code").all(),
+      incidents: db.prepare("SELECT id,at,kind,note,resolved,resolved_at AS resolvedAt FROM event_incidents WHERE booking_id=? ORDER BY at DESC").all(bookingId)
+        .map((item: Row) => ({...item,resolved:Boolean(item.resolved)})),
     };
   }
 
@@ -342,17 +430,167 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       const p = participant as Row;
       const teamIndex = req.body.teamIndex === undefined ? p.team_index : Number(req.body.teamIndex);
       if (!Number.isInteger(teamIndex) || teamIndex < -1 || teamIndex > 20) fail(400, "Invalid team assignment.");
+      let equipmentCode = req.body.equipmentCode === undefined ? p.equipment_code : safeText(req.body.equipmentCode,32);
+      if (equipmentCode) {
+        const gear = db.prepare("SELECT code,status FROM equipment WHERE code=?").get(equipmentCode) as Row | undefined;
+        if (!gear || gear.status === "maintenance" || gear.status === "damaged") fail(400, "Selected equipment is not available.");
+        const occupied = db.prepare("SELECT id FROM participants WHERE booking_id=? AND equipment_code=? AND active=1 AND id<>?")
+          .get(bookingId,equipmentCode,p.id) as Row | undefined;
+        if (occupied) fail(409, "That tagger is already assigned to another active participant.");
+      }
       db.prepare(`
-        UPDATE participants SET team_index=?,checked_in=?,waiver_signed=?,active=?,updated_at=?
+        UPDATE participants SET team_index=?,checked_in=?,waiver_signed=?,active=?,equipment_code=?,updated_at=?
         WHERE id=? AND booking_id=?
       `).run(
         teamIndex,
         req.body.checkedIn === undefined ? p.checked_in : (req.body.checkedIn ? 1 : 0),
         req.body.waiverSigned === undefined ? p.waiver_signed : (req.body.waiverSigned ? 1 : 0),
         req.body.active === undefined ? p.active : (req.body.active ? 1 : 0),
+        equipmentCode,
         now(),p.id,bookingId
       );
       res.json(eventData(bookingId, true));
+    });
+
+    app.post("/api/admin/events/:bookingId/equipment/auto-assign", (req, res) => {
+      const bookingId = String(req.params.bookingId);
+      getBooking(bookingId);
+      const people = db.prepare(
+        "SELECT id FROM participants WHERE booking_id=? AND active=1 AND checked_in=1 ORDER BY team_index,created_at LIMIT 12"
+      ).all(bookingId) as Row[];
+      const gear = db.prepare(
+        "SELECT code FROM equipment WHERE status IN ('available','assigned') ORDER BY code LIMIT 12"
+      ).all() as Row[];
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("UPDATE participants SET equipment_code='',updated_at=? WHERE booking_id=?").run(now(),bookingId);
+        people.forEach((person,index) => {
+          if (gear[index]) db.prepare("UPDATE participants SET equipment_code=?,updated_at=? WHERE id=?")
+            .run(gear[index].code,now(),person.id);
+        });
+        db.exec("COMMIT");
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+      res.json(eventData(bookingId,true));
+    });
+
+    app.patch("/api/admin/equipment/:code", (req,res) => {
+      const code=safeText(req.params.code,32);
+      const statuses=["available","assigned","charging","maintenance","damaged"];
+      if (!statuses.includes(req.body.status)) fail(400,"Choose a valid equipment status.");
+      const battery=Number(req.body.battery);
+      if (!Number.isInteger(battery) || battery<0 || battery>100) fail(400,"Battery must be 0–100.");
+      const result=db.prepare("UPDATE equipment SET status=?,battery=?,notes=?,updated_at=? WHERE code=?")
+        .run(req.body.status,battery,text(req.body.notes ?? "","equipment notes",500),now(),code);
+      if (!result.changes) fail(404,"Equipment not found.");
+      res.json({ok:true});
+    });
+
+    app.post("/api/admin/events/:bookingId/rounds/generate", (req,res) => {
+      const bookingId=String(req.params.bookingId);
+      const booking=getBooking(bookingId);
+      const payload=JSON.parse(booking.payload);
+      const active=db.prepare("SELECT DISTINCT team_index FROM participants WHERE booking_id=? AND active=1 AND team_index>=0 ORDER BY team_index")
+        .all(bookingId) as Row[];
+      if (active.length<2) fail(400,"At least two assigned teams are required.");
+      const teams=active.map((row)=>Number(row.team_index));
+      const pairs:Array<[number,number]>=[];
+      for(let left=0;left<teams.length;left++) for(let right=left+1;right<teams.length;right++) pairs.push([teams[left],teams[right]]);
+      const requested=Number(req.body.durationMinutes);
+      const availableMinutes=Math.max(15,Number(payload.summary?.totalMissionMinutes ?? payload.mission?.durationMinutes ?? 60));
+      const automatic=Math.max(5,Math.min(15,Math.floor(availableMinutes/Math.max(1,pairs.length))));
+      const durationMinutes=Number.isInteger(requested) && requested>=5 && requested<=30 ? requested : automatic;
+      const mode=text(req.body.mode ?? "Team Battle","round mode",80,2);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("DELETE FROM event_rounds WHERE booking_id=?").run(bookingId);
+        pairs.forEach(([teamA,teamB],index)=>db.prepare(
+          "INSERT INTO event_rounds(id,booking_id,round_no,team_a,team_b,mode,duration_seconds) VALUES(?,?,?,?,?,?,?)"
+        ).run(randomUUID(),bookingId,index+1,teamA,teamB,mode,durationMinutes*60));
+        db.prepare("UPDATE event_profiles SET event_status='ready',updated_at=? WHERE booking_id=?").run(now(),bookingId);
+        db.exec("COMMIT");
+      } catch(error){db.exec("ROLLBACK");throw error;}
+      res.json(eventData(bookingId,true));
+    });
+
+    app.patch("/api/admin/events/:bookingId/rounds/:roundId", (req,res) => {
+      const bookingId=String(req.params.bookingId), roundId=String(req.params.roundId);
+      getBooking(bookingId);
+      const round=db.prepare("SELECT * FROM event_rounds WHERE id=? AND booking_id=?").get(roundId,bookingId) as Row | undefined;
+      if(!round) fail(404,"Round not found.");
+      const action=typeof req.body.action==="string" ? req.body.action : "score";
+      const stamp=now();
+      if(action==="start"){
+        db.prepare("UPDATE event_rounds SET status='paused',elapsed_seconds=elapsed_seconds+MAX(0,CAST((julianday(?) - julianday(started_at))*86400 AS INTEGER)),started_at='' WHERE booking_id=? AND status='live' AND id<>?")
+          .run(stamp,bookingId,roundId);
+        db.prepare("UPDATE event_rounds SET status='live',started_at=?,ended_at='' WHERE id=?").run(stamp,roundId);
+        db.prepare("UPDATE event_profiles SET event_status='live',updated_at=? WHERE booking_id=?").run(stamp,bookingId);
+      } else if(action==="pause" && round.status==="live"){
+        const extra=round.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(round.started_at))/1000)) : 0;
+        db.prepare("UPDATE event_rounds SET status='paused',elapsed_seconds=?,started_at='' WHERE id=?").run(round.elapsed_seconds+extra,roundId);
+      } else if(action==="resume" && round.status==="paused"){
+        db.prepare("UPDATE event_rounds SET status='live',started_at=? WHERE id=?").run(stamp,roundId);
+      } else if(action==="complete"){
+        const extra=round.status==="live" && round.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(round.started_at))/1000)) : 0;
+        db.prepare("UPDATE event_rounds SET status='completed',elapsed_seconds=?,started_at='',ended_at=?,score_a=?,score_b=?,objective_a=?,objective_b=?,notes=? WHERE id=?")
+          .run(
+            round.elapsed_seconds+extra,stamp,
+            Math.max(0,Math.floor(Number(req.body.scoreA ?? round.score_a))),
+            Math.max(0,Math.floor(Number(req.body.scoreB ?? round.score_b))),
+            Math.max(0,Math.floor(Number(req.body.objectiveA ?? round.objective_a))),
+            Math.max(0,Math.floor(Number(req.body.objectiveB ?? round.objective_b))),
+            text(req.body.notes ?? round.notes,"round notes",500),roundId
+          );
+      } else if(action==="reset"){
+        db.prepare("UPDATE event_rounds SET status='pending',started_at='',elapsed_seconds=0,ended_at='',score_a=0,score_b=0,objective_a=0,objective_b=0,notes='' WHERE id=?").run(roundId);
+      } else {
+        db.prepare("UPDATE event_rounds SET score_a=?,score_b=?,objective_a=?,objective_b=?,notes=? WHERE id=?")
+          .run(
+            Math.max(0,Math.floor(Number(req.body.scoreA ?? round.score_a))),
+            Math.max(0,Math.floor(Number(req.body.scoreB ?? round.score_b))),
+            Math.max(0,Math.floor(Number(req.body.objectiveA ?? round.objective_a))),
+            Math.max(0,Math.floor(Number(req.body.objectiveB ?? round.objective_b))),
+            text(req.body.notes ?? round.notes,"round notes",500),roundId
+          );
+      }
+      res.json(eventData(bookingId,true));
+    });
+
+    app.post("/api/admin/events/:bookingId/final", (req,res) => {
+      const bookingId=String(req.params.bookingId);
+      getBooking(bookingId);
+      const board=leaderboard(bookingId);
+      if(board.length<2) fail(400,"Complete preliminary rounds before creating a final.");
+      const existing=(db.prepare("SELECT MAX(round_no) AS n FROM event_rounds WHERE booking_id=?").get(bookingId) as Row).n ?? 0;
+      const duration=Math.max(5,Math.min(20,Math.floor(Number(req.body.durationMinutes)||10)));
+      db.prepare("INSERT INTO event_rounds(id,booking_id,round_no,team_a,team_b,mode,duration_seconds) VALUES(?,?,?,?,?,?,?)")
+        .run(randomUUID(),bookingId,existing+1,board[0].teamIndex,board[1].teamIndex,"Championship Final",duration*60);
+      res.json(eventData(bookingId,true));
+    });
+
+    app.post("/api/admin/events/:bookingId/status", (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      const statuses=["registration","ready","live","complete"];
+      if(!statuses.includes(req.body.status)) fail(400,"Choose a valid event status.");
+      db.prepare("UPDATE event_profiles SET event_status=?,updated_at=? WHERE booking_id=?").run(req.body.status,now(),bookingId);
+      res.json(eventData(bookingId,true));
+    });
+
+    app.post("/api/admin/events/:bookingId/incidents", (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      const kinds=["safety","equipment","weather","venue","other"];
+      const kind=kinds.includes(req.body.kind) ? req.body.kind : "other";
+      db.prepare("INSERT INTO event_incidents(id,booking_id,at,kind,note,resolved) VALUES(?,?,?,?,?,0)")
+        .run(randomUUID(),bookingId,now(),kind,text(req.body.note,"incident note",1000,2));
+      res.status(201).json(eventData(bookingId,true));
+    });
+
+    app.patch("/api/admin/events/:bookingId/incidents/:incidentId", (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      if(typeof req.body.resolved!=="boolean") fail(400,"Choose incident status.");
+      const result=db.prepare("UPDATE event_incidents SET resolved=?,resolved_at=? WHERE id=? AND booking_id=?")
+        .run(req.body.resolved?1:0,req.body.resolved?now():"",String(req.params.incidentId),bookingId);
+      if(!result.changes) fail(404,"Incident not found.");
+      res.json(eventData(bookingId,true));
     });
   }
 
