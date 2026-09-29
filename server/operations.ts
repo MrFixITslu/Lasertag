@@ -285,18 +285,19 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       const participant = db.prepare("SELECT * FROM participants WHERE id=? AND booking_id=?")
         .get(String(req.params.participantId), booking.id) as Row | undefined;
       if (!participant) fail(404, "Participant not found.");
-      const name = req.body.name === undefined ? participant.name : text(req.body.name, "participant name", 120, 2);
+      const p = participant as Row;
+      const name = req.body.name === undefined ? p.name : text(req.body.name, "participant name", 120, 2);
       db.prepare(`
         UPDATE participants SET name=?,email=?,phone=?,guardian_name=?,guardian_phone=?,waiver_signed=?,updated_at=?
         WHERE id=? AND booking_id=?
       `).run(
         name,
-        req.body.email === undefined ? participant.email : safeText(req.body.email,254),
-        req.body.phone === undefined ? participant.phone : safeText(req.body.phone,30),
-        req.body.guardianName === undefined ? participant.guardian_name : safeText(req.body.guardianName,120),
-        req.body.guardianPhone === undefined ? participant.guardian_phone : safeText(req.body.guardianPhone,30),
-        req.body.waiverSigned === undefined ? participant.waiver_signed : (req.body.waiverSigned ? 1 : 0),
-        now(),participant.id,booking.id
+        req.body.email === undefined ? p.email : safeText(req.body.email,254),
+        req.body.phone === undefined ? p.phone : safeText(req.body.phone,30),
+        req.body.guardianName === undefined ? p.guardian_name : safeText(req.body.guardianName,120),
+        req.body.guardianPhone === undefined ? p.guardian_phone : safeText(req.body.guardianPhone,30),
+        req.body.waiverSigned === undefined ? p.waiver_signed : (req.body.waiverSigned ? 1 : 0),
+        now(),p.id,booking.id
       );
       res.json(eventData(booking.id));
     });
@@ -338,17 +339,18 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       const participant = db.prepare("SELECT * FROM participants WHERE id=? AND booking_id=?")
         .get(String(req.params.participantId), bookingId) as Row | undefined;
       if (!participant) fail(404, "Participant not found.");
-      const teamIndex = req.body.teamIndex === undefined ? participant.team_index : Number(req.body.teamIndex);
+      const p = participant as Row;
+      const teamIndex = req.body.teamIndex === undefined ? p.team_index : Number(req.body.teamIndex);
       if (!Number.isInteger(teamIndex) || teamIndex < -1 || teamIndex > 20) fail(400, "Invalid team assignment.");
       db.prepare(`
         UPDATE participants SET team_index=?,checked_in=?,waiver_signed=?,active=?,updated_at=?
         WHERE id=? AND booking_id=?
       `).run(
         teamIndex,
-        req.body.checkedIn === undefined ? participant.checked_in : (req.body.checkedIn ? 1 : 0),
-        req.body.waiverSigned === undefined ? participant.waiver_signed : (req.body.waiverSigned ? 1 : 0),
-        req.body.active === undefined ? participant.active : (req.body.active ? 1 : 0),
-        now(),participant.id,bookingId
+        req.body.checkedIn === undefined ? p.checked_in : (req.body.checkedIn ? 1 : 0),
+        req.body.waiverSigned === undefined ? p.waiver_signed : (req.body.waiverSigned ? 1 : 0),
+        req.body.active === undefined ? p.active : (req.body.active ? 1 : 0),
+        now(),p.id,bookingId
       );
       res.json(eventData(bookingId, true));
     });
