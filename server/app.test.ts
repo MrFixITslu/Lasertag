@@ -107,6 +107,26 @@ describe("Booking API security and workflows", () => {
         secureCookies: false,
       }),
     ).toThrow();
+    expect(() =>
+      createApp({
+        databasePath: ":memory:",
+        adminUsername: "admin",
+        adminPassword: password,
+        publicOrigin: origin,
+        secureCookies: false,
+        linkSecret: "short",
+      }),
+    ).toThrow(/LINK_SECRET/);
+    expect(() =>
+      createApp({
+        databasePath: ":memory:",
+        adminUsername: "admin",
+        adminPassword: password,
+        publicOrigin: origin,
+        secureCookies: false,
+        linkSecret: password,
+      }),
+    ).toThrow(/LINK_SECRET/);
     const service = await start();
     expect((await service.request("/api/admin/bookings")).status).toBe(401);
     expect(
@@ -197,7 +217,8 @@ describe("Booking API security and workflows", () => {
     expect(first.status).toBe(201);
     const receipt = await first.json();
     expect(receipt.status).toBe("pending");
-    expect(Object.keys(receipt).sort()).toEqual(["reference", "status"]);
+    expect(receipt.portalToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(Object.keys(receipt).sort()).toEqual(["portalToken", "reference", "status"]);
     const repeated = await service.request(
       "/api/bookings",
       "POST",
@@ -250,6 +271,182 @@ describe("Booking API security and workflows", () => {
     ).json();
     expect(persisted.total).toBe(1);
     expect(persisted.bookings[0].reference).toBe(receipt.reference);
+  });
+  it("creates a secure registration portal with roster and balanced teams", async () => {
+    const service = await start();
+    const response = await service.request("/api/bookings", "POST", draft({
+      missionId: "corporate-team-battle",
+      players: 15,
+      venueType: "event",
+      eventDetails: {
+        eventName: "Finance Team Challenge",
+        organization: "Test Company",
+        groupType: "corporate",
+        ageGroup: "adults",
+        emergencyContactName: "Event Lead",
+        emergencyContactPhone: "+17585550000",
+        objectives: "Team building",
+        accessibilityNotes: "",
+        photoConsent: false,
+        participantNames: ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+      },
+    }), key());
+    expect(response.status).toBe(201);
+    const receipt = await response.json();
+    const portal = await service.request(`/api/portal/${receipt.portalToken}`);
+    expect(portal.status).toBe(200);
+    const data = await portal.json();
+    expect(data.profile.eventName).toBe("Finance Team Challenge");
+    expect(data.registeredPlayers).toBe(15);
+    expect(data.rosterTeamSizes).toEqual([5, 5, 5]);
+    expect(new Set(data.participants.map((p: any) => p.teamIndex))).toEqual(new Set([0,1,2]));
+
+    const added = await service.request(
+      `/api/portal/${receipt.portalToken}/participants`,
+      "POST",
+      { name: "Late Player", waiverSigned: true },
+    );
+    expect(added.status).toBe(201);
+    const after = await added.json();
+    expect(after.registeredPlayers).toBe(16);
+    expect(after.rosterTeamSizes).toEqual([6, 5, 5]);
+
+    const auth = await service.login();
+    const randomized = await service.request(
+      `/api/admin/events/${data.bookingId}/rebalance`,
+      "POST",
+      { randomize: true },
+      auth,
+    );
+    expect(randomized.status).toBe(200);
+    const locked = await service.request(
+      `/api/admin/events/${data.bookingId}/lock`,
+      "POST",
+      { locked: true },
+      auth,
+    );
+    expect(locked.status).toBe(200);
+    expect((await locked.json()).profile.rosterLocked).toBe(true);
+    expect(
+      (
+        await service.request(
+          `/api/portal/${receipt.portalToken}/participants`,
+          "POST",
+          { name: "Blocked Player" },
+        )
+      ).status,
+    ).toBe(409);
+  });
+  it("runs Mission Control from check-in through scoring equipment and incidents", async () => {
+    const service = await start();
+    const names = Array.from({ length: 15 }, (_, index) => `Player ${index + 1}`);
+    const bookingResponse = await service.request("/api/bookings", "POST", draft({
+      missionId: "corporate-team-battle",
+      players: 15,
+      venueType: "event",
+      eventDetails: {
+        eventName: "Operations Challenge",
+        organization: "Test Company",
+        groupType: "corporate",
+        ageGroup: "adults",
+        emergencyContactName: "Event Lead",
+        emergencyContactPhone: "+17585550000",
+        objectives: "Teamwork",
+        accessibilityNotes: "",
+        photoConsent: false,
+        participantNames: names,
+      },
+    }), key());
+    const receipt = await bookingResponse.json();
+    const portal = await (await service.request(`/api/portal/${receipt.portalToken}`)).json();
+    const auth = await service.login();
+
+    for (const person of portal.participants.slice(0, 12)) {
+      expect((
+        await service.request(
+          `/api/admin/events/${portal.bookingId}/participants/${person.id}`,
+          "PATCH",
+          { checkedIn: true },
+          auth,
+        )
+      ).status).toBe(200);
+    }
+
+    const assigned = await service.request(
+      `/api/admin/events/${portal.bookingId}/equipment/auto-assign`,
+      "POST",
+      {},
+      auth,
+    );
+    expect(assigned.status).toBe(200);
+    const assignedData = await assigned.json();
+    const codes = assignedData.participants.filter((p: any) => p.equipmentCode).map((p: any) => p.equipmentCode);
+    expect(codes).toHaveLength(12);
+    expect(new Set(codes).size).toBe(12);
+
+    const schedule = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/generate`,
+      "POST",
+      { mode: "Team Battle", durationMinutes: 10 },
+      auth,
+    );
+    expect(schedule.status).toBe(200);
+    const scheduled = await schedule.json();
+    expect(scheduled.rounds).toHaveLength(3);
+    expect(scheduled.profile.eventStatus).toBe("ready");
+
+    const firstRound = scheduled.rounds[0];
+    const started = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/${firstRound.id}`,
+      "PATCH",
+      { action: "start" },
+      auth,
+    );
+    expect(started.status).toBe(200);
+    expect((await started.json()).rounds[0].status).toBe("live");
+
+    const completed = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/${firstRound.id}`,
+      "PATCH",
+      { action: "complete", scoreA: 5, scoreB: 3, objectiveA: 1, objectiveB: 0, notes: "Clean round" },
+      auth,
+    );
+    expect(completed.status).toBe(200);
+    const scored = await completed.json();
+    expect(scored.rounds[0].status).toBe("completed");
+    expect(scored.leaderboard[0].points).toBe(3);
+
+    const final = await service.request(
+      `/api/admin/events/${portal.bookingId}/final`,
+      "POST",
+      { durationMinutes: 10 },
+      auth,
+    );
+    expect(final.status).toBe(200);
+    expect((await final.json()).rounds.at(-1).mode).toBe("Championship Final");
+
+    const incident = await service.request(
+      `/api/admin/events/${portal.bookingId}/incidents`,
+      "POST",
+      { kind: "equipment", note: "Tagger swapped during setup." },
+      auth,
+    );
+    expect(incident.status).toBe(201);
+    const incidentData = await incident.json();
+    expect(incidentData.incidents[0].resolved).toBe(false);
+
+    const gear = incidentData.equipment[0];
+    expect((
+      await service.request(
+        `/api/admin/equipment/${gear.code}`,
+        "PATCH",
+        { status: "charging", battery: 40, notes: "Recharge before next event" },
+        auth,
+      )
+    ).status).toBe(200);
+    const refreshed = await (await service.request(`/api/admin/events/${portal.bookingId}`, "GET", undefined, auth)).json();
+    expect(refreshed.equipment[0].status).toBe("charging");
+    expect(refreshed.equipment[0].battery).toBe(40);
   });
   it("persists balanced corporate teams and their match rotation", async () => {
     const service = await start();

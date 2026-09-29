@@ -13,6 +13,8 @@ import {
 import Brand from "./Brand";
 import Kpis from "./Kpis";
 import { BusinessConsole, type AdminSession } from "./BusinessConsole";
+import EventOps from "./EventOps";
+import StoreAdmin from "./StoreAdmin";
 import { api, ApiError } from "./lib/api";
 import {
   buildDateChoices,
@@ -391,7 +393,7 @@ export default function Admin() {
               {[
                 "bookings",
                 "kpis",
-                ...(session.finance ? ["finance"] : []),
+                ...(session.finance ? ["finance", "store"] : []),
                 ...(session.role === "admin"
                   ? [
                       "marketing",
@@ -422,6 +424,7 @@ export default function Admin() {
                         bookings: "Bookings",
                         kpis: "KPIs",
                         finance: "Income",
+                        store: "Store",
                         marketing: "Campaign lab",
                         audience: "Audience",
                         email: "Email",
@@ -436,6 +439,8 @@ export default function Admin() {
             </nav>
             {section === "kpis" ? (
               <Kpis session={session} />
+            ) : section === "store" ? (
+              <StoreAdmin session={session} />
             ) : section !== "bookings" ? (
               <BusinessConsole
                 key={section}
@@ -661,7 +666,7 @@ export default function Admin() {
                             <dt>Players</dt>
                             <dd>
                               {detail.draft.players} ·{" "}
-                              {detail.summary.squadCount} squads
+                              {detail.summary.teamCount ?? detail.summary.squadCount} teams
                             </dd>
                           </div>
                           <div>
@@ -720,6 +725,7 @@ export default function Admin() {
                             <p>{detail.draft.notes}</p>
                           </div>
                         )}
+                        <EventOps bookingId={detail.id} session={session} />
                         <form onSubmit={save} className="admin-edit">
                           <h3>MANAGE REQUEST</h3>
                           <div className="admin-edit-grid">

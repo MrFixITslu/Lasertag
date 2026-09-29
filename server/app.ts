@@ -26,6 +26,8 @@ import {
 } from "../src/lib/booking";
 import { installKpis, validVisit, hashVisit } from "./kpis";
 import { installBusiness } from "./business";
+import { initOperations } from "./operations";
+import { installStore } from "./store";
 import type { BookingDraft } from "../src/types";
 
 const digest = (value: string) =>
@@ -110,6 +112,41 @@ function validateDraft(input: unknown) {
   };
   if (!validCustomer(customer))
     fail(400, "Enter a valid name, email and phone number.");
+  const rawEvent =
+    body.eventDetails && typeof body.eventDetails === "object" && !Array.isArray(body.eventDetails)
+      ? (body.eventDetails as Record<string, unknown>)
+      : {};
+  const groupTypes = ["birthday","corporate","school","community","resort","friends","other"];
+  const ageGroups = ["children","teens","adults","mixed"];
+  const inferredGroup = groupTypes.includes(mission.category) ? mission.category : "other";
+  const groupType =
+    typeof rawEvent.groupType === "string" && groupTypes.includes(rawEvent.groupType)
+      ? rawEvent.groupType
+      : inferredGroup;
+  const ageGroup =
+    typeof rawEvent.ageGroup === "string" && ageGroups.includes(rawEvent.ageGroup)
+      ? rawEvent.ageGroup
+      : "mixed";
+  const participantNames = Array.isArray(rawEvent.participantNames)
+    ? rawEvent.participantNames
+        .filter((name): name is string => typeof name === "string")
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .slice(0, Math.min(60, players))
+        .map((name) => name.slice(0, 120))
+    : [];
+  const emergencyContactPhone = text(
+    rawEvent.emergencyContactPhone ?? customer.phone,
+    "emergency contact phone",
+    30,
+    7,
+  );
+  if (
+    emergencyContactPhone.replace(/\D/g, "").length < 7 ||
+    emergencyContactPhone.replace(/\D/g, "").length > 15 ||
+    !/^[+\d\s().-]+$/.test(emergencyContactPhone)
+  )
+    fail(400, "Enter a valid emergency contact phone number.");
   const draft: BookingDraft = {
     missionId: mission.id,
     players,
@@ -120,6 +157,23 @@ function validateDraft(input: unknown) {
     address: text(body.address, "address", 500, 3),
     notes: text(body.notes ?? "", "notes", 2000),
     weatherFlexible: body.weatherFlexible,
+    eventDetails: {
+      eventName: text(rawEvent.eventName ?? "", "event name", 120),
+      organization: text(rawEvent.organization ?? "", "organization", 120),
+      groupType: groupType as BookingDraft["eventDetails"]["groupType"],
+      ageGroup: ageGroup as BookingDraft["eventDetails"]["ageGroup"],
+      emergencyContactName: text(
+        rawEvent.emergencyContactName ?? customer.fullName,
+        "emergency contact name",
+        120,
+        2,
+      ),
+      emergencyContactPhone,
+      objectives: text(rawEvent.objectives ?? "", "objectives", 1000),
+      accessibilityNotes: text(rawEvent.accessibilityNotes ?? "", "accessibility notes", 1000),
+      photoConsent: Boolean(rawEvent.photoConsent),
+      participantNames,
+    },
     customer,
   };
   return {
@@ -139,11 +193,17 @@ export interface ServerConfig {
   secureCookies: boolean;
   trustProxy?: number;
   staticPath?: string;
+  linkSecret?: string;
 }
 
 export function createApp(config: ServerConfig) {
   if (config.adminPassword.length < 16 || config.adminPassword.length > 256)
     throw new Error("ADMIN_PASSWORD must contain 16–256 characters.");
+  if (
+    config.linkSecret !== undefined &&
+    (config.linkSecret.length < 32 || config.linkSecret === config.adminPassword)
+  )
+    throw new Error("LINK_SECRET must be at least 32 characters and different from ADMIN_PASSWORD.");
   if (!config.adminUsername || config.adminUsername.length > 80)
     throw new Error("ADMIN_USERNAME is required (maximum 80 characters).");
   const origin = new URL(config.publicOrigin).origin;
@@ -179,19 +239,31 @@ export function createApp(config: ServerConfig) {
   db.exec(
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','staff')), finance INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);`,
   );
+  const operations = initOperations(db, origin, config.linkSecret ?? config.adminPassword);
   const salt = randomBytes(32);
   const passwordHash = scryptSync(config.adminPassword, salt, 64);
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy ?? 0);
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    const bearerPath =
+      /^\/(manage|join|checkin)\//.test(req.path) ||
+      /^\/store\/order\//.test(req.path) ||
+      /^\/api\/(portal|join|checkin)\//.test(req.path) ||
+      /^\/api\/store\/orders\//.test(req.path);
     res.set({
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Referrer-Policy": bearerPath ? "no-referrer" : "strict-origin-when-cross-origin",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "X-Permitted-Cross-Domain-Policies": "none",
       "Content-Security-Policy":
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     });
+    if (config.secureCookies)
+      res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    if (bearerPath) res.set({ "Cache-Control": "no-store, private", "X-Robots-Tag": "noindex, nofollow, noarchive" });
     next();
   });
   app.use("/api", (_req, res, next) => {
@@ -347,7 +419,7 @@ export function createApp(config: ServerConfig) {
     const hash = digest(JSON.stringify(booking.draft));
     const existing = db
       .prepare(
-        "SELECT reference,request_hash FROM bookings WHERE request_key=?",
+        "SELECT id,reference,request_hash FROM bookings WHERE request_key=?",
       )
       .get(key) as Row | undefined;
     if (existing) {
@@ -356,7 +428,8 @@ export function createApp(config: ServerConfig) {
           409,
           "This request identifier was already used. Refresh before submitting a different request.",
         );
-      return res.json({ reference: existing.reference, status: "pending" });
+      const portalToken = operations.rotatePortalToken(existing.id);
+      return res.json({ reference: existing.reference, status: "pending", portalToken });
     }
     const id = randomUUID();
     const reference = `CZ-${randomBytes(6).toString("hex").toUpperCase()}`;
@@ -402,7 +475,15 @@ export function createApp(config: ServerConfig) {
       db.exec("ROLLBACK");
       throw error;
     }
-    res.status(201).json({ reference, status: "pending" });
+    const portal = operations.createBookingPortal(id, booking.draft, booking.summary);
+    const notification = operations
+      .notifyBookingCreated(id, portal.token)
+      .catch(() => ({ sent: false, detail: "Confirmation email could not be sent." }));
+    if (app.locals.jobs instanceof Set) {
+      app.locals.jobs.add(notification);
+      void notification.finally(() => app.locals.jobs.delete(notification));
+    }
+    res.status(201).json({ reference, status: "pending", portalToken: portal.token });
   });
   const getBooking = (id: string) => {
     const row = db.prepare("SELECT * FROM bookings WHERE id=?").get(id) as
@@ -489,6 +570,8 @@ export function createApp(config: ServerConfig) {
     }
     return value;
   }
+  operations.installRoutes(app, { fail, text, getBooking });
+  installStore(app, db, { fail, text }, config.linkSecret ?? config.adminPassword);
   installBusiness(app, db, config, {
     fail,
     text,
@@ -587,7 +670,10 @@ export function createApp(config: ServerConfig) {
       maxAge: "1h",
     }),
   );
-  app.get(["/", "/admin", "/admin/"], (req, res) => {
+  app.get([
+    "/", "/admin", "/admin/", "/manage/:token", "/join/:token", "/checkin/:token",
+    "/store", "/store/", "/store/order/:reference/:token"
+  ], (req, res) => {
     res.set("Cache-Control", "no-store");
     if (req.path.startsWith("/admin"))
       res.set("X-Robots-Tag", "noindex, nofollow");

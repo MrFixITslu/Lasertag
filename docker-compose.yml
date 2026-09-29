@@ -13,6 +13,7 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in .env}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in .env}
+      LINK_SECRET: ${LINK_SECRET:?Set a separate random LINK_SECRET in .env}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -36,9 +37,12 @@ services:
       - proxy_network
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:size=256m,nosuid,nodev
 
 volumes:
   booking_data:

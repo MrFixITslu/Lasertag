@@ -58,7 +58,7 @@ export default function Landing() {
         <div className="cz-grain" aria-hidden="true" />
         <header className="cz-nav">
           <Brand />
-          <nav aria-label="Main navigation"><a href="#operations">THE MISSIONS</a><a href="#field-kit">THE EXPERIENCE</a></nav>
+          <nav aria-label="Main navigation"><a href="#operations">THE MISSIONS</a><a href="#field-kit">THE EXPERIENCE</a><a href="/store">STORE</a></nav>
           <a href="#booking" className="cz-nav-cta">ENTER THE ZONE <ArrowUpRight size={16} /></a>
         </header>
         <div className="cz-hero-layout">
@@ -97,7 +97,7 @@ export default function Landing() {
         <PublicEvents />
         <section className="cz-final" aria-labelledby="final-title"><div className="cz-final-grid" aria-hidden="true" /><Crosshair size={36} /><p className="cz-kicker">SQUAD INVITE / YOU’RE IN</p><h2 id="final-title">LESS “SOMEDAY”.<br /><em>MORE GAME DAY.</em></h2><p>The group chat has talked enough. Give it a mission.</p><a href="#booking" className="cz-enter">ENTER THE COMBATZONE <ArrowUpRight size={23} /></a></section>
       </main>
-      <footer className="cz-footer"><span>COMBATZONE SLU <small>MOBILE LASER TAG / SAINT LUCIA</small></span><a href="https://netronic.net/en/media" target="_blank" rel="noreferrer">Equipment imagery & illustrative gameplay: NETRONIC</a><a href="#booking">MISSION BOOKING <ArrowUpRight size={14} /></a><button className="analytics-preference" onClick={()=>{const off=!analyticsOff;try{localStorage.setItem('cz-analytics-optout',off?'1':'0');}catch{}setAnalyticsOff(off);}}>{analyticsOff?'Anonymous visit measurement off — enable':'Anonymous visit measurement on — opt out'}</button></footer>
+      <footer className="cz-footer"><span>COMBATZONE SLU <small>MOBILE LASER TAG / SAINT LUCIA</small></span><a href="https://netronic.net/en/media" target="_blank" rel="noreferrer">Equipment imagery & illustrative gameplay: NETRONIC</a><a href="#booking">MISSION BOOKING <ArrowUpRight size={14} /></a><a href="/store">STORE <ArrowUpRight size={14} /></a><button className="analytics-preference" onClick={()=>{const off=!analyticsOff;try{localStorage.setItem('cz-analytics-optout',off?'1':'0');}catch{}setAnalyticsOff(off);}}>{analyticsOff?'Anonymous visit measurement off — enable':'Anonymous visit measurement on — opt out'}</button></footer>
       <dialog ref={dialog} className="cz-theatre" aria-labelledby="theatre-title" onCancel={closeTheatre} onClose={() => setTheatre(false)}>
         <header><div><small>COMBATZONE SLU / FIELD FOOTAGE</small><h2 id="theatre-title">FALCON. IN ACTION.</h2></div><button onClick={closeTheatre} aria-label="Close gameplay video"><X /></button></header>
         {theatre && <iframe title="Watch NETRONIC Falcon outdoor laser tag gameplay" src={`https://www.youtube-nocookie.com/embed/${gameplayId}?autoplay=1&rel=0&playsinline=1`} allow="autoplay; encrypted-media; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />}

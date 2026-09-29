@@ -28,9 +28,11 @@ export default function Kpis({ session }: { session: AdminSession }) {
     if (!data) return;
     const rows = [
       ...data.operations.cards.map((c: Row) => ({ ...c, section: "Bookings" })),
+      ...(data.eventOperations?.cards || []).map((c: Row) => ({ ...c, section: "Event operations" })),
       ...(data.finance || []).flatMap((f: Row) =>
         f.cards.map((c: Row) => ({ ...c, section: "Finance " + f.currency })),
       ),
+      ...(data.store?.cards || []).map((c: Row) => ({ ...c, section: "Store" })),
       ...(data.marketing?.cards || []).map((c: Row) => ({
         ...c,
         section: "Marketing",
@@ -145,6 +147,13 @@ export default function Kpis({ session }: { session: AdminSession }) {
             <Breakdown title="MISSION DEMAND" rows={data.operations.missions} />
             <Breakdown title="DEMAND BY AREA" rows={data.operations.areas} />
           </div>
+          {data.eventOperations && (
+            <>
+              <h3>EVENT OPERATIONS & READINESS</h3>
+              <p>These cards use event dates in the selected period and distinguish booked headcount from actual registration/check-in.</p>
+              <Metrics cards={data.eventOperations.cards} />
+            </>
+          )}
           {data.finance && (
             <>
               <h3>FINANCIAL PERFORMANCE</h3>
@@ -162,6 +171,26 @@ export default function Kpis({ session }: { session: AdminSession }) {
                 ))
               ) : (
                 <p>No bookings yet.</p>
+              )}
+              {data.packageProfitability?.length > 0 && (
+                <>
+                  <h3>PACKAGE PROFITABILITY</h3>
+                  <div className="business-table"><table><thead><tr><th>Package</th><th>Events</th><th>Cash</th><th>Recorded costs</th><th>Margin</th><th>Margin %</th></tr></thead><tbody>
+                    {data.packageProfitability.map((row:Row)=><tr key={row.currency+'-'+row.mission}><td>{row.mission}</td><td>{row.events}</td><td>{new Intl.NumberFormat('en-GB',{style:'currency',currency:row.currency}).format(row.cash/100)}</td><td>{new Intl.NumberFormat('en-GB',{style:'currency',currency:row.currency}).format(row.cost/100)}</td><td>{new Intl.NumberFormat('en-GB',{style:'currency',currency:row.currency}).format(row.margin/100)}</td><td>{row.marginRate===null?'—':row.marginRate+'%'}</td></tr>)}
+                  </tbody></table></div>
+                </>
+              )}
+              {data.store && (
+                <>
+                  <h3>STORE PERFORMANCE</h3>
+                  <Metrics cards={data.store.cards} />
+                  {data.store.currencies?.map((row:Row)=>(
+                    <div key={row.currency}>
+                      <h3>{row.currency}</h3>
+                      <Metrics cards={row.cards} currency={row.currency} />
+                    </div>
+                  ))}
+                </>
               )}
             </>
           )}
