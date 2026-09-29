@@ -321,6 +321,39 @@ export function installKpis(
           .map((r) => [r.key, r.value]),
       ),
     };
+    const eventRows = all.filter((r) => between(r.date));
+    const eventIds = new Set(eventRows.map((r) => r.id));
+    const participants = (db.prepare("SELECT booking_id,waiver_signed,checked_in,active FROM participants").all() as Row[])
+      .filter((p) => eventIds.has(p.booking_id) && p.active);
+    const expectedPlayers = eventRows.reduce(
+      (sum, row) => sum + Number(JSON.parse(row.payload).draft?.players || 0),
+      0,
+    );
+    const eventProfiles = (db.prepare("SELECT booking_id,event_status FROM event_profiles").all() as Row[])
+      .filter((row) => eventIds.has(row.booking_id));
+    const completedRounds = (db.prepare("SELECT booking_id,status FROM event_rounds").all() as Row[])
+      .filter((row) => eventIds.has(row.booking_id) && row.status === "completed").length;
+    const incidents = (db.prepare("SELECT booking_id,kind,resolved FROM event_incidents").all() as Row[])
+      .filter((row) => eventIds.has(row.booking_id));
+    const ratings = (db.prepare("SELECT booking_id,rating FROM event_feedback").all() as Row[])
+      .filter((row) => eventIds.has(row.booking_id))
+      .map((row) => Number(row.rating));
+    const gear = db.prepare("SELECT status,battery FROM equipment").all() as Row[];
+    result.eventOperations = {
+      cards: [
+        card("registrationCompletion","Roster registration completion",rate(participants.length,expectedPlayers),null,"percent","Registered active participants / booked headcount for events in the selected event-date period."),
+        card("checkInRate","Checked-in attendance",rate(participants.filter((p)=>p.checked_in).length,expectedPlayers),null,"percent","Checked-in participants / booked headcount."),
+        card("safetyAckRate","Safety acknowledgement completion",rate(participants.filter((p)=>p.waiver_signed).length,participants.length),null,"percent","Safety acknowledgements / active registered participants."),
+        card("eventsComplete","Events operationally completed",eventProfiles.filter((p)=>p.event_status==="complete").length,null),
+        card("roundsCompleted","Rounds completed",completedRounds,null),
+        card("openIncidents","Open event incidents",incidents.filter((i)=>!i.resolved).length,null),
+        card("safetyIncidents","Safety incidents",incidents.filter((i)=>i.kind==="safety").length,null),
+        card("averageRating","Average customer rating",ratings.length?Math.round((ratings.reduce((a,b)=>a+b,0)/ratings.length)*10)/10:null,null,"number","Post-event organizer ratings, 1–5."),
+        card("equipmentReady","Equipment ready",gear.filter((g)=>["available","assigned"].includes(g.status)&&Number(g.battery)>=50).length,null,"number","Taggers available/assigned with at least 50% battery."),
+        card("equipmentAttention","Equipment needing attention",gear.filter((g)=>["maintenance","damaged"].includes(g.status)||Number(g.battery)<25).length,null,"number","Maintenance/damaged taggers or battery below 25%."),
+      ],
+    };
+
     if (res.locals.user.role === "admin" || res.locals.user.finance) {
       const payments = db
         .prepare(
@@ -331,6 +364,43 @@ export function installKpis(
         all.map((r) => JSON.parse(r.payload).summary.currency),
       );
       result.finance = [];
+      const eventCosts = db.prepare("SELECT booking_id,cents FROM event_costs").all() as Row[];
+      const packageProfitability = new Map<string,{mission:string;currency:string;events:number;cash:number;cost:number}>();
+      for (const row of eventRows) {
+        const payload = JSON.parse(row.payload);
+        const currency = payload.summary?.currency || "XCD";
+        const mission = payload.mission?.name || "Unknown";
+        const key = `${currency}::${mission}`;
+        const current = packageProfitability.get(key) || {mission,currency,events:0,cash:0,cost:0};
+        current.events += 1;
+        current.cash += payments
+          .filter((p)=>p.booking_id===row.id)
+          .reduce((sum,p)=>sum+(p.kind==="payment"?p.cents:-p.cents),0);
+        current.cost += eventCosts.filter((cost)=>cost.booking_id===row.id).reduce((sum,cost)=>sum+Number(cost.cents),0);
+        packageProfitability.set(key,current);
+      }
+      result.packageProfitability = [...packageProfitability.values()]
+        .map((row)=>({...row,margin:row.cash-row.cost,marginRate:row.cash?Math.round(((row.cash-row.cost)/row.cash)*1000)/10:null}))
+        .sort((a,b)=>b.margin-a.margin);
+
+      const storeOrders = db.prepare("SELECT * FROM store_orders").all() as Row[];
+      const storePaid = storeOrders.filter((order)=>
+        ["paid","fulfilled"].includes(order.status) &&
+        between(localDay(new Date(order.created_at)))
+      );
+      const storeRevenue = storePaid.reduce((sum,row)=>sum+Number(row.total_cents),0);
+      const storeCost = storePaid.reduce((sum,row)=>sum+Number(row.total_cost_cents),0);
+      const lowStock = (db.prepare("SELECT COUNT(*) AS n FROM store_products WHERE active=1 AND kind='physical' AND stock_qty<=5").get() as Row).n;
+      result.store = {
+        cards: [
+          card("storeRevenue","Store paid/fulfilled sales",storeRevenue,null,"money"),
+          card("storeGrossMargin","Store gross margin",storeRevenue-storeCost,null,"money","Store sales minus recorded product cost; excludes overhead and transaction fees."),
+          card("storeOrders","Store paid/fulfilled orders",storePaid.length,null),
+          card("storePending","Store pending/confirmed orders",storeOrders.filter((o)=>["pending","confirmed"].includes(o.status)).length,null),
+          card("storeLowStock","Low-stock products",lowStock,null,"number","Active physical products with five or fewer units."),
+        ],
+        currency: "XCD",
+      };
       for (const currency of currencies) {
         const calc = (a: string, b: string) => {
           const rows = payments.filter(
