@@ -233,14 +233,25 @@ export function createApp(config: ServerConfig) {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy ?? 0);
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    const bearerPath =
+      /^\/(manage|join|checkin)\//.test(req.path) ||
+      /^\/store\/order\//.test(req.path) ||
+      /^\/api\/(portal|join|checkin)\//.test(req.path) ||
+      /^\/api\/store\/orders\//.test(req.path);
     res.set({
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Referrer-Policy": bearerPath ? "no-referrer" : "strict-origin-when-cross-origin",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "X-Permitted-Cross-Domain-Policies": "none",
       "Content-Security-Policy":
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     });
+    if (config.secureCookies)
+      res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    if (bearerPath) res.set({ "Cache-Control": "no-store, private", "X-Robots-Tag": "noindex, nofollow, noarchive" });
     next();
   });
   app.use("/api", (_req, res, next) => {
