@@ -41,6 +41,19 @@ export interface CustomerProfile {
   marketingOptIn: boolean;
 }
 
+export interface EventRegistration {
+  eventName: string;
+  organization: string;
+  groupType: 'birthday' | 'corporate' | 'school' | 'community' | 'resort' | 'friends' | 'other';
+  ageGroup: 'children' | 'teens' | 'adults' | 'mixed';
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  objectives: string;
+  accessibilityNotes: string;
+  photoConsent: boolean;
+  participantNames: string[];
+}
+
 export interface BookingDraft {
   missionId: string;
   players: number;
@@ -51,6 +64,7 @@ export interface BookingDraft {
   address: string;
   weatherFlexible: boolean;
   notes: string;
+  eventDetails: EventRegistration;
   customer: CustomerProfile;
 }
 
