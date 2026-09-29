@@ -559,7 +559,7 @@ export function createApp(config: ServerConfig) {
     return value;
   }
   operations.installRoutes(app, { fail, text, getBooking });
-  installStore(app, db, { fail, text });
+  installStore(app, db, { fail, text }, config.linkSecret ?? config.adminPassword);
   installBusiness(app, db, config, {
     fail,
     text,
