@@ -137,6 +137,16 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       detail TEXT NOT NULL DEFAULT '',
       PRIMARY KEY(booking_id,type)
     );
+    CREATE TABLE IF NOT EXISTS event_costs(
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      category TEXT NOT NULL,
+      cents INTEGER NOT NULL CHECK(cents>=0),
+      note TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS event_costs_booking ON event_costs(booking_id,created_at);
   `);
   const participantColumns = db.prepare("PRAGMA table_info(participants)").all() as Row[];
   if (!participantColumns.some((column) => column.name === "equipment_code")) {
@@ -493,6 +503,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
 
   function installRoutes(app: Express, helpers: Helpers) {
     const { fail, text, getBooking } = helpers;
+    const finance = (_req:Request,res:Response,next:NextFunction) =>
+      res.locals.user?.role === "admin" || Boolean(res.locals.user?.finance)
+        ? next()
+        : next(Object.assign(new Error("Finance access required."),{status:403}));
     const portal = (req: Request, _res: Response, next: NextFunction) => {
       const booking = portalBooking(String(req.params.token ?? ""));
       if (!booking) return next(Object.assign(new Error("Registration link is invalid or expired."), { status: 404 }));
@@ -948,6 +962,39 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
         .run(req.body.resolved?1:0,req.body.resolved?now():"",String(req.params.incidentId),bookingId);
       if(!result.changes) fail(404,"Incident not found.");
       res.json(eventData(bookingId,true));
+    });
+
+    app.get("/api/admin/events/:bookingId/costs", finance, (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      const rows=db.prepare(
+        "SELECT id,category,cents,note,actor,created_at AS createdAt FROM event_costs WHERE booking_id=? ORDER BY created_at DESC"
+      ).all(bookingId) as Row[];
+      res.json({
+        rows,
+        totalCents:rows.reduce((sum,row)=>sum+Number(row.cents),0),
+      });
+    });
+
+    app.post("/api/admin/events/:bookingId/costs", finance, (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      const categories=["staffing","travel","venue","equipment","supplies","marketing","other"];
+      if(!categories.includes(req.body.category)) fail(400,"Choose a valid cost category.");
+      const cents=Number(req.body.cents);
+      if(!Number.isInteger(cents)||cents<0||cents>100_000_000) fail(400,"Enter a valid event cost.");
+      db.prepare("INSERT INTO event_costs(id,booking_id,category,cents,note,actor,created_at) VALUES(?,?,?,?,?,?,?)")
+        .run(randomUUID(),bookingId,req.body.category,cents,text(req.body.note??"","cost note",500),res.locals.user.id,now());
+      const rows=db.prepare(
+        "SELECT id,category,cents,note,actor,created_at AS createdAt FROM event_costs WHERE booking_id=? ORDER BY created_at DESC"
+      ).all(bookingId) as Row[];
+      res.status(201).json({rows,totalCents:rows.reduce((sum,row)=>sum+Number(row.cents),0)});
+    });
+
+    app.delete("/api/admin/events/:bookingId/costs/:costId", finance, (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      const result=db.prepare("DELETE FROM event_costs WHERE id=? AND booking_id=?")
+        .run(String(req.params.costId),bookingId);
+      if(!result.changes) fail(404,"Event cost not found.");
+      res.json({ok:true});
     });
 
     app.post("/api/admin/events/:bookingId/send-message", async (req,res,next) => {
