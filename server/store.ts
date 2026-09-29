@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { rateLimit } from "express-rate-limit";
 
 type Row = Record<string, any>;
@@ -12,8 +12,24 @@ const now=()=>new Date().toISOString();
 const digest=(value:string)=>createHash("sha256").update(value).digest("hex");
 const money=(value:number)=>Math.round(value);
 
-export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
+export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSecret:string){
   const {fail,text}=helpers;
+  const tokenKey=createHash("sha256").update(linkSecret).digest();
+  const seal=(value:string)=>{
+    const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",tokenKey,iv);
+    const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);
+    return "v1:"+iv.toString("base64url")+":"+cipher.getAuthTag().toString("base64url")+":"+encrypted.toString("base64url");
+  };
+  const open=(value:unknown)=>{
+    if(typeof value!=="string"||!value)return "";
+    const parts=value.split(":");
+    if(parts.length!==4||parts[0]!=="v1")return "";
+    try{
+      const decipher=createDecipheriv("aes-256-gcm",tokenKey,Buffer.from(parts[1],"base64url"));
+      decipher.setAuthTag(Buffer.from(parts[2],"base64url"));
+      return Buffer.concat([decipher.update(Buffer.from(parts[3],"base64url")),decipher.final()]).toString("utf8");
+    }catch{return "";}
+  };
   const required=<T>(value:T|undefined,message:string):T=>{
     if(!value) fail(404,message);
     return value as T;
@@ -46,7 +62,9 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
       id TEXT PRIMARY KEY,
       reference TEXT UNIQUE NOT NULL,
       access_hash TEXT NOT NULL,
+      access_value TEXT NOT NULL DEFAULT '',
       request_key TEXT UNIQUE NOT NULL,
+      request_hash TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       reservation_expires_at TEXT NOT NULL,
@@ -74,6 +92,12 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     );
     CREATE INDEX IF NOT EXISTS store_orders_status_date ON store_orders(status,created_at);
   `);
+
+  const orderColumns=db.prepare("PRAGMA table_info(store_orders)").all() as Row[];
+  if(!orderColumns.some((column)=>column.name==="access_value"))
+    db.exec("ALTER TABLE store_orders ADD COLUMN access_value TEXT NOT NULL DEFAULT ''");
+  if(!orderColumns.some((column)=>column.name==="request_hash"))
+    db.exec("ALTER TABLE store_orders ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''");
 
   function cleanupExpired(){
     const rows=db.prepare("SELECT id FROM store_orders WHERE status='pending' AND reservation_expires_at<?").all(now()) as Row[];
@@ -105,8 +129,17 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     cleanupExpired();
     const requestKey=String(req.get("Idempotency-Key")||"");
     if(!/^[a-f0-9-]{36}$/i.test(requestKey)) fail(400,"Missing order request identifier.");
-    const existing=db.prepare("SELECT reference,access_hash FROM store_orders WHERE request_key=?").get(requestKey) as Row|undefined;
-    if(existing) return res.status(409).json({error:"This order was already submitted. Check your existing order confirmation."});
+    const requestHash=digest(JSON.stringify(req.body));
+    const existing=db.prepare("SELECT reference,access_value,request_hash,status,total_cents,currency,reservation_expires_at FROM store_orders WHERE request_key=?").get(requestKey) as Row|undefined;
+    if(existing){
+      if(existing.request_hash!==requestHash) fail(409,"This order request identifier was already used for different details.");
+      const accessToken=open(existing.access_value);
+      if(!accessToken) fail(409,"This order was already submitted. Use the original order link or contact CombatZone.");
+      return res.json({
+        reference:existing.reference,accessToken,status:existing.status,totalCents:existing.total_cents,
+        currency:existing.currency,reservationExpiresAt:existing.reservation_expires_at,replayed:true
+      });
+    }
     if(!Array.isArray(req.body.items)||req.body.items.length<1||req.body.items.length>20) fail(400,"Choose at least one store item.");
     const customerName=text(req.body.customerName,"customer name",120,2);
     const email=text(req.body.email,"email",254,3).toLowerCase();
@@ -143,10 +176,13 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     db.exec("BEGIN IMMEDIATE");
     try{
       db.prepare(`
-        INSERT INTO store_orders(id,reference,access_hash,request_key,created_at,updated_at,reservation_expires_at,status,
+        INSERT INTO store_orders(id,reference,access_hash,access_value,request_key,request_hash,created_at,updated_at,reservation_expires_at,status,
           customer_name,email,phone,fulfillment,address,notes,total_cents,total_cost_cents,currency)
-        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?, ?,?)
-      `).run(id,reference,digest(accessToken),requestKey,now(),now(),expires,customerName,email,phone,fulfillment,address,notes,total,cost,rows[0].currency);
+        VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?)
+      `).run(
+        id,reference,digest(accessToken),seal(accessToken),requestKey,requestHash,now(),now(),expires,
+        customerName,email,phone,fulfillment,address,notes,total,cost,rows[0].currency
+      );
       for(const p of rows){
         const qty=requested.get(p.id)!;
         db.prepare("INSERT INTO store_order_items(order_id,product_id,name,kind,quantity,unit_price_cents,unit_cost_cents) VALUES(?,?,?,?,?,?,?)")
