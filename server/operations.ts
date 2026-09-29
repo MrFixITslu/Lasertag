@@ -589,6 +589,152 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       res.json(eventData(booking.id));
     });
 
+    app.get("/api/portal/:token/join-qr", portal, async (req, res, next) => {
+      try {
+        const booking = (req as any).portalBooking as Row;
+        const data = eventData(booking.id);
+        if (!data?.joinUrl) fail(404, "Participant registration link is unavailable.");
+        const svg = await QRCode.toString(data.joinUrl, {
+          type: "svg",
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 320,
+        });
+        res.set({ "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "no-store" }).send(svg);
+      } catch (error) { next(error); }
+    });
+
+    app.get("/api/join/:token", (req, res) => {
+      const booking = inviteBooking(String(req.params.token ?? ""));
+      if (!booking) fail(404, "Participant registration link is invalid or expired.");
+      const data = eventData(booking.id);
+      const profile = data?.profile;
+      res.json({
+        reference: booking.reference,
+        date: booking.date,
+        time: booking.time,
+        mission: data?.mission ?? "",
+        eventName: profile?.eventName ?? "",
+        organization: profile?.organization ?? "",
+        ageGroup: profile?.ageGroup ?? "mixed",
+        expectedPlayers: data?.expectedPlayers ?? 0,
+        registeredPlayers: data?.registeredPlayers ?? 0,
+        rosterLocked: Boolean(profile?.rosterLocked),
+      });
+    });
+
+    app.post("/api/join/:token", (req, res) => {
+      const booking = inviteBooking(String(req.params.token ?? ""));
+      if (!booking) fail(404, "Participant registration link is invalid or expired.");
+      ensureUnlocked(booking.id);
+      const payload = JSON.parse(booking.payload);
+      const expected = Math.min(60, Number(payload.draft?.players ?? 0));
+      const count = (db.prepare("SELECT COUNT(*) AS n FROM participants WHERE booking_id=? AND active=1").get(booking.id) as Row).n;
+      if (expected && count >= expected) fail(409, "This event roster is full. Contact the organizer if the booking size changes.");
+      const stamp = now();
+      const checkin = newCheckinToken();
+      const participantId = randomUUID();
+      db.prepare(`
+        INSERT INTO participants(
+          id,booking_id,name,email,phone,guardian_name,guardian_phone,
+          waiver_signed,checkin_hash,checkin_value,created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        participantId,
+        booking.id,
+        text(req.body.name, "participant name", 120, 2),
+        safeText(req.body.email,254),
+        safeText(req.body.phone,30),
+        safeText(req.body.guardianName,120),
+        safeText(req.body.guardianPhone,30),
+        req.body.safetyAcknowledged ? 1 : 0,
+        checkin.hash,
+        checkin.token,
+        stamp,
+        stamp,
+      );
+      rebalance(booking.id);
+      res.status(201).json({
+        registered: true,
+        participantId,
+        checkInUrl: `${publicOrigin}/checkin/${checkin.token}`,
+        event: eventData(booking.id),
+      });
+    });
+
+    app.get("/api/checkin/:token", (req, res) => {
+      const participant = checkinParticipant(String(req.params.token ?? ""));
+      if (!participant) fail(404, "Check-in link is invalid or expired.");
+      const payload = JSON.parse(participant.payload);
+      const profile = db.prepare("SELECT event_name,organization,age_group,event_status FROM event_profiles WHERE booking_id=?").get(participant.booking_id) as Row | undefined;
+      res.json({
+        name: participant.name,
+        reference: participant.reference,
+        date: participant.date,
+        time: participant.time,
+        mission: payload.mission?.name ?? "",
+        eventName: profile?.event_name ?? "",
+        organization: profile?.organization ?? "",
+        ageGroup: profile?.age_group ?? "mixed",
+        eventStatus: profile?.event_status ?? "registration",
+        teamIndex: participant.team_index,
+        checkedIn: Boolean(participant.checked_in),
+        safetyAcknowledged: Boolean(participant.waiver_signed),
+        guardianName: participant.guardian_name,
+        guardianPhone: participant.guardian_phone,
+      });
+    });
+
+    app.get("/api/checkin/:token/qr", async (req, res, next) => {
+      try {
+        const rawToken = String(req.params.token ?? "");
+        const participant = checkinParticipant(rawToken);
+        if (!participant) fail(404, "Check-in link is invalid or expired.");
+        const svg = await QRCode.toString(`${publicOrigin}/checkin/${rawToken}`, {
+          type: "svg",
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 320,
+        });
+        res.set({ "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "no-store" }).send(svg);
+      } catch (error) { next(error); }
+    });
+
+    app.post("/api/checkin/:token", (req, res) => {
+      const participant = checkinParticipant(String(req.params.token ?? ""));
+      if (!participant) fail(404, "Check-in link is invalid or expired.");
+      if (req.body.safetyAcknowledged !== true)
+        fail(400, "Safety acknowledgement is required before check-in.");
+      const profile = db.prepare("SELECT age_group,roster_locked FROM event_profiles WHERE booking_id=?").get(participant.booking_id) as Row | undefined;
+      const minorGroup = ["children","teens"].includes(String(profile?.age_group ?? ""));
+      const guardianName = req.body.guardianName === undefined
+        ? participant.guardian_name
+        : safeText(req.body.guardianName,120);
+      const guardianPhone = req.body.guardianPhone === undefined
+        ? participant.guardian_phone
+        : safeText(req.body.guardianPhone,30);
+      if (minorGroup && (!guardianName || guardianPhone.replace(/\D/g,"").length < 7))
+        fail(400, "Parent or guardian details are required for youth check-in.");
+      db.prepare(`
+        UPDATE participants SET waiver_signed=1,checked_in=1,guardian_name=?,guardian_phone=?,updated_at=?
+        WHERE id=?
+      `).run(guardianName,guardianPhone,now(),participant.id);
+      res.json({ checkedIn: true });
+    });
+
+    app.post("/api/portal/:token/feedback", portal, (req, res) => {
+      const booking = (req as any).portalBooking as Row;
+      const profile = db.prepare("SELECT event_status FROM event_profiles WHERE booking_id=?").get(booking.id) as Row | undefined;
+      if (profile?.event_status !== "complete" && booking.status !== "completed")
+        fail(409, "Feedback opens after the event is completed.");
+      const rating = Number(req.body.rating);
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) fail(400, "Choose a rating from 1 to 5.");
+      const comment = text(req.body.comment ?? "", "feedback comment", 1500);
+      db.prepare("INSERT INTO event_feedback(id,booking_id,rating,comment,created_at) VALUES(?,?,?,?,?)")
+        .run(randomUUID(),booking.id,rating,comment,now());
+      res.status(201).json({ ok: true });
+    });
+
     app.put("/api/portal/:token/profile", portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       const groupTypes = ["birthday","corporate","school","community","resort","friends","other"];
@@ -863,6 +1009,29 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
         .run(req.body.resolved?1:0,req.body.resolved?now():"",String(req.params.incidentId),bookingId);
       if(!result.changes) fail(404,"Incident not found.");
       res.json(eventData(bookingId,true));
+    });
+
+    app.post("/api/admin/events/:bookingId/send-message", async (req,res,next) => {
+      try {
+        const bookingId=String(req.params.bookingId); getBooking(bookingId);
+        const type = String(req.body.type ?? "") as "confirmation" | "reminder_7d" | "reminder_1d" | "results";
+        if (!["confirmation","reminder_7d","reminder_1d","results"].includes(type))
+          fail(400,"Choose a valid event message.");
+        if (type === "results") {
+          const profile = db.prepare("SELECT event_status FROM event_profiles WHERE booking_id=?").get(bookingId) as Row | undefined;
+          if (profile?.event_status !== "complete") fail(409,"Complete the event before sending results.");
+        }
+        const result = await sendEventMessage(bookingId,type);
+        if (!result.sent) fail(503,result.detail || "Email delivery is unavailable.");
+        res.json({ok:true});
+      } catch(error){ next(error); }
+    });
+
+    app.get("/api/admin/events/:bookingId/communications", (req,res) => {
+      const bookingId=String(req.params.bookingId); getBooking(bookingId);
+      res.json(db.prepare(
+        "SELECT type,sent_at AS sentAt,status,detail FROM communications WHERE booking_id=? ORDER BY sent_at DESC"
+      ).all(bookingId));
     });
   }
 
