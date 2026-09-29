@@ -313,11 +313,20 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     const participants = db.prepare(`
       SELECT id,name,email,phone,guardian_name AS guardianName,guardian_phone AS guardianPhone,
              waiver_signed AS waiverSigned,checked_in AS checkedIn,team_index AS teamIndex,
-             equipment_code AS equipmentCode,active,created_at AS createdAt,updated_at AS updatedAt
+             equipment_code AS equipmentCode,checkin_value AS checkinValue,active,created_at AS createdAt,updated_at AS updatedAt
       FROM participants WHERE booking_id=? ORDER BY active DESC,team_index,created_at,id
     `).all(bookingId) as Row[];
     const active = participants.filter((item) => item.active);
     const sizes = balancedRosterSizes(active.length);
+    const invite = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
+    const portalRecord = includePrivate
+      ? db.prepare("SELECT token_value FROM booking_portals WHERE booking_id=?").get(bookingId) as Row | undefined
+      : undefined;
+    const gallery = db.prepare(`
+      SELECT em.media_id AS id,em.label,m.name,m.mime
+      FROM event_media em JOIN media m ON m.id=em.media_id
+      WHERE em.booking_id=? AND m.public=1 ORDER BY em.label,m.created_at
+    `).all(bookingId) as Row[];
     return {
       serverNow: now(),
       bookingId,
@@ -343,19 +352,24 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
         updatedAt: profile.updated_at,
       } : null,
       participants: participants.map((item) => ({
-        ...item,
-        waiverSigned: Boolean(item.waiverSigned),
-        checkedIn: Boolean(item.checkedIn),
-        active: Boolean(item.active),
-        ...(includePrivate ? {} : { email: item.email, phone: item.phone }),
+        id:item.id,name:item.name,email:item.email,phone:item.phone,
+        guardianName:item.guardianName,guardianPhone:item.guardianPhone,
+        waiverSigned:Boolean(item.waiverSigned),checkedIn:Boolean(item.checkedIn),
+        teamIndex:item.teamIndex,equipmentCode:includePrivate ? item.equipmentCode : "",
+        active:Boolean(item.active),createdAt:item.createdAt,updatedAt:item.updatedAt,
+        checkInUrl:item.checkinValue ? `${publicOrigin}/checkin/${item.checkinValue}` : "",
       })),
       registeredPlayers: active.length,
       rosterTeamSizes: sizes,
+      joinUrl: invite?.token_value ? `${publicOrigin}/join/${invite.token_value}` : "",
+      registrationUrl: portalRecord?.token_value ? `${publicOrigin}/manage/${portalRecord.token_value}` : "",
       rounds: roundData(bookingId),
       leaderboard: leaderboard(bookingId),
-      equipment: db.prepare("SELECT code,status,battery,notes,updated_at AS updatedAt FROM equipment ORDER BY code").all(),
-      incidents: db.prepare("SELECT id,at,kind,note,resolved,resolved_at AS resolvedAt FROM event_incidents WHERE booking_id=? ORDER BY at DESC").all(bookingId)
-        .map((item: Row) => ({...item,resolved:Boolean(item.resolved)})),
+      gallery: gallery.map((item)=>({id:item.id,label:item.label,name:item.name,mime:item.mime,url:`/uploads/${item.id}`})),
+      equipment: includePrivate ? db.prepare("SELECT code,status,battery,notes,updated_at AS updatedAt FROM equipment ORDER BY code").all() : [],
+      incidents: includePrivate ? db.prepare("SELECT id,at,kind,note,resolved,resolved_at AS resolvedAt FROM event_incidents WHERE booking_id=? ORDER BY at DESC").all(bookingId)
+        .map((item: Row) => ({...item,resolved:Boolean(item.resolved)})) : [],
+      feedback: includePrivate ? db.prepare("SELECT id,rating,comment,created_at AS createdAt FROM event_feedback WHERE booking_id=? ORDER BY created_at DESC").all(bookingId) : [],
     };
   }
 
