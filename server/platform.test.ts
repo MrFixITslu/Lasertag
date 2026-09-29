@@ -135,10 +135,33 @@ describe("CombatZone platform end-to-end and security",()=>{
     const auth=await service.login();
     const list=await (await service.request("/api/admin/bookings","GET",undefined,auth)).json();
     const bookingId=list.bookings[0].id;
-    const event=await (await service.request(`/api/admin/events/${bookingId}`,"GET",undefined,auth)).json();
+    let event=await (await service.request(`/api/admin/events/${bookingId}`,"GET",undefined,auth)).json();
     expect(event.participants[0].checkedIn).toBe(true);
     expect(event.participants[0].waiverSigned).toBe(true);
+    expect(event.teamBalanceWarning).toBe(true);
+    expect((await service.request(`/api/admin/events/${bookingId}/lock`,"POST",{locked:true},auth)).status).toBe(409);
 
+    for(let index=2;index<=6;index+=1){
+      expect((await service.request(`/api/portal/${receipt.portalToken}/participants`,"POST",{
+        name:`Child ${index}`,waiverSigned:true,
+      })).status).toBe(201);
+    }
+    event=await (await service.request(`/api/admin/events/${bookingId}`,"GET",undefined,auth)).json();
+    expect(event.rosterTeamSizes).toEqual([3,3]);
+    expect(event.teamBalanceWarning).toBe(false);
+
+    const move=event.participants.find((person:any)=>person.teamIndex===1);
+    expect(move).toBeTruthy();
+    expect((await service.request(
+      `/api/admin/events/${bookingId}/participants/${move.id}`,"PATCH",
+      {teamIndex:0},auth,
+    )).status).toBe(200);
+    event=await (await service.request(`/api/admin/events/${bookingId}`,"GET",undefined,auth)).json();
+    expect(event.rosterTeamSizes).toEqual([4,2]);
+    expect(event.teamBalanceWarning).toBe(true);
+    expect((await service.request(`/api/admin/events/${bookingId}/lock`,"POST",{locked:true},auth)).status).toBe(409);
+
+    expect((await service.request(`/api/admin/events/${bookingId}/rebalance`,"POST",{randomize:false},auth)).status).toBe(200);
     expect((await service.request(`/api/admin/events/${bookingId}/lock`,"POST",{locked:true},auth)).status).toBe(200);
     expect((await service.request(`/api/join/${joinToken}`,"POST",{
       name:"Blocked Child",safetyAcknowledged:true,guardianName:"Parent",guardianPhone:"+17585553333",
