@@ -516,79 +516,6 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       next();
     };
 
-    app.get("/api/join/:token", invite, (req,res) => {
-      const booking=(req as any).inviteBooking as Row;
-      const payload=JSON.parse(booking.payload);
-      const profile=db.prepare("SELECT event_name,organization,age_group,roster_locked,event_status FROM event_profiles WHERE booking_id=?").get(booking.id) as Row;
-      const registered=(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE booking_id=? AND active=1").get(booking.id) as Row).n;
-      res.json({
-        reference:booking.reference,date:booking.date,time:booking.time,
-        mission:payload.mission?.name ?? "",expectedPlayers:payload.draft?.players ?? 0,
-        registeredPlayers:registered,eventName:profile?.event_name ?? "",
-        organization:profile?.organization ?? "",ageGroup:profile?.age_group ?? "mixed",
-        rosterLocked:Boolean(profile?.roster_locked),eventStatus:profile?.event_status ?? "registration",
-      });
-    });
-
-    app.get("/api/join/:token/qr", invite, async (req,res,next) => {
-      try {
-        const url=`${publicOrigin}/join/${String(req.params.token)}`;
-        const svg=await QRCode.toString(url,{type:"svg",margin:1,width:320,errorCorrectionLevel:"M"});
-        res.type("image/svg+xml").set("Cache-Control","private, no-store").send(svg);
-      } catch(error){ next(error); }
-    });
-
-    app.post("/api/join/:token", invite, (req,res) => {
-      const booking=(req as any).inviteBooking as Row;
-      ensureUnlocked(booking.id);
-      const count=(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE booking_id=? AND active=1").get(booking.id) as Row).n;
-      if(count>=60) fail(400,"Roster limit reached.");
-      const name=text(req.body.name,"participant name",120,2);
-      const checkinToken=newCheckinToken();
-      const stamp=now();
-      const id=randomUUID();
-      db.prepare(`
-        INSERT INTO participants(id,booking_id,name,email,phone,guardian_name,guardian_phone,waiver_signed,checkin_hash,checkin_value,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-      `).run(
-        id,booking.id,name,safeText(req.body.email,254),safeText(req.body.phone,30),
-        safeText(req.body.guardianName,120),safeText(req.body.guardianPhone,30),
-        req.body.waiverSigned?1:0,checkinToken.hash,checkinToken.token,stamp,stamp
-      );
-      rebalance(booking.id);
-      const participant=db.prepare("SELECT team_index FROM participants WHERE id=?").get(id) as Row;
-      res.status(201).json({
-        ok:true,participantId:id,name,teamIndex:participant.team_index,
-        checkInUrl:`${publicOrigin}/checkin/${checkinToken.token}`,
-      });
-    });
-
-    app.get("/api/checkin/:token", checkin, (req,res) => {
-      const participant=(req as any).checkinParticipant as Row;
-      const payload=JSON.parse(participant.payload);
-      res.json({
-        participantId:participant.id,name:participant.name,reference:participant.reference,
-        date:participant.date,time:participant.time,mission:payload.mission?.name ?? "",
-        checkedIn:Boolean(participant.checked_in),waiverSigned:Boolean(participant.waiver_signed),
-        teamIndex:participant.team_index,
-      });
-    });
-
-    app.get("/api/checkin/:token/qr", checkin, async (req,res,next) => {
-      try {
-        const url=`${publicOrigin}/checkin/${String(req.params.token)}`;
-        const svg=await QRCode.toString(url,{type:"svg",margin:1,width:320,errorCorrectionLevel:"M"});
-        res.type("image/svg+xml").set("Cache-Control","private, no-store").send(svg);
-      } catch(error){ next(error); }
-    });
-
-    app.post("/api/checkin/:token", checkin, (req,res) => {
-      const participant=(req as any).checkinParticipant as Row;
-      db.prepare("UPDATE participants SET checked_in=1,waiver_signed=?,updated_at=? WHERE id=?")
-        .run(req.body.waiverSigned===false ? participant.waiver_signed : 1,now(),participant.id);
-      res.json({ok:true,checkedIn:true});
-    });
-
     app.get("/api/portal/:token", portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       res.json(eventData(booking.id));
@@ -734,7 +661,8 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
         fail(409, "Feedback opens after the event is completed.");
       const rating = Number(req.body.rating);
       if (!Number.isInteger(rating) || rating < 1 || rating > 5) fail(400, "Choose a rating from 1 to 5.");
-      const comment = text(req.body.comment ?? "", "feedback comment", 1500);
+      const comment = text(req.body.comment ?? "", "feedback comment", 2000);
+      db.prepare("DELETE FROM event_feedback WHERE booking_id=?").run(booking.id);
       db.prepare("INSERT INTO event_feedback(id,booking_id,rating,comment,created_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),booking.id,rating,comment,now());
       res.status(201).json({ ok: true });
@@ -822,19 +750,6 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       res.json(eventData(booking.id));
     });
 
-    app.post("/api/portal/:token/feedback", portal, (req,res) => {
-      const booking=(req as any).portalBooking as Row;
-      const profile=db.prepare("SELECT event_status FROM event_profiles WHERE booking_id=?").get(booking.id) as Row | undefined;
-      if(profile?.event_status!=="complete") fail(409,"Feedback opens after the event is completed.");
-      const rating=Number(req.body.rating);
-      if(!Number.isInteger(rating) || rating<1 || rating>5) fail(400,"Choose a rating from 1 to 5.");
-      const comment=text(req.body.comment ?? "","feedback",2000);
-      db.prepare("DELETE FROM event_feedback WHERE booking_id=?").run(booking.id);
-      db.prepare("INSERT INTO event_feedback(id,booking_id,rating,comment,created_at) VALUES(?,?,?,?,?)")
-        .run(randomUUID(),booking.id,rating,comment,now());
-      res.status(201).json({ok:true});
-    });
-
     app.get("/api/admin/events/:bookingId", (req, res) => {
       getBooking(String(req.params.bookingId));
       res.json(eventData(String(req.params.bookingId), true));
@@ -857,15 +772,6 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       getBooking(bookingId);
       db.prepare("DELETE FROM event_media WHERE booking_id=? AND media_id=?").run(bookingId,String(req.params.mediaId));
       res.json(eventData(bookingId,true));
-    });
-
-    app.post("/api/admin/events/:bookingId/communications", async (req,res) => {
-      const bookingId=String(req.params.bookingId);
-      getBooking(bookingId);
-      const allowed=["confirmation","reminder_7d","reminder_1d","results"] as const;
-      if(!allowed.includes(req.body.type)) fail(400,"Choose a valid message type.");
-      const result=await sendEventMessage(bookingId,req.body.type);
-      res.status(result.sent ? 200 : 503).json({ ...result, event:eventData(bookingId,true) });
     });
 
     app.post("/api/admin/events/:bookingId/rebalance", (req, res) => {
