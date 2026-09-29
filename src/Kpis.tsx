@@ -183,7 +183,13 @@ export default function Kpis({ session }: { session: AdminSession }) {
               {data.store && (
                 <>
                   <h3>STORE PERFORMANCE</h3>
-                  <Metrics cards={data.store.cards} currency={data.store.currency} />
+                  <Metrics cards={data.store.cards} />
+                  {data.store.currencies?.map((row:Row)=>(
+                    <div key={row.currency}>
+                      <h3>{row.currency}</h3>
+                      <Metrics cards={row.cards} currency={row.currency} />
+                    </div>
+                  ))}
                 </>
               )}
             </>
