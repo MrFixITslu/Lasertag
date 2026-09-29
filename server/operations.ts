@@ -850,7 +850,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         db.prepare("SELECT 1 FROM campaigns WHERE media_id=? AND status<>'draft' LIMIT 1").get(mediaId) ||
         db.prepare(`
           SELECT 1 FROM social_posts sp JOIN content c ON c.id=sp.content_id
-          WHERE c.media_id=? AND sp.status IN ('sending','sent','posted','submitted','unknown') LIMIT 1
+          WHERE c.media_id=? AND sp.status IN ('sending','submitted','published','unknown') LIMIT 1
         `).get(mediaId)
       );
       if(!stillPublic) db.prepare("UPDATE media SET public=0 WHERE id=?").run(mediaId);
