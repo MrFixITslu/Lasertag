@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import type { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { rateLimit } from "express-rate-limit";
@@ -14,6 +14,10 @@ const money=(value:number)=>Math.round(value);
 
 export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
   const {fail,text}=helpers;
+  const finance = (_req:Request,res:Response,next:NextFunction) =>
+    res.locals.user?.role === "admin" || Boolean(res.locals.user?.finance)
+      ? next()
+      : next(Object.assign(new Error("Finance access required."),{status:403}));
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_products(
       id TEXT PRIMARY KEY,
@@ -177,10 +181,10 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     });
   });
 
-  app.get("/api/admin/store/products",(_req,res)=>{
+  app.get("/api/admin/store/products",finance,(_req,res)=>{
     res.json(db.prepare("SELECT * FROM store_products ORDER BY active DESC,kind,name").all());
   });
-  app.post("/api/admin/store/products",(req,res)=>{
+  app.post("/api/admin/store/products",finance,(req,res)=>{
     const slug=text(req.body.slug,"slug",80,2).toLowerCase();
     if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) fail(400,"Use a URL-safe product slug.");
     const kind=["physical","digital"].includes(req.body.kind)?req.body.kind:null;
@@ -195,7 +199,7 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     `).run(id,slug,text(req.body.name,"product name",120,2),text(req.body.description??"","description",1500),kind,price,cost,currency,kind==="physical"?stock:0,req.body.active===false?0:1,text(req.body.deliveryText??"","digital delivery",3000),stamp,stamp);
     res.status(201).json({id});
   });
-  app.patch("/api/admin/store/products/:id",(req,res)=>{
+  app.patch("/api/admin/store/products/:id",finance,(req,res)=>{
     const current=db.prepare("SELECT * FROM store_products WHERE id=?").get(String(req.params.id)) as Row|undefined;
     if(!current) fail(404,"Product not found.");
     const kind=["physical","digital"].includes(req.body.kind)?req.body.kind:current.kind;
@@ -218,7 +222,7 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     res.json({ok:true});
   });
 
-  app.get("/api/admin/store/orders",(req,res)=>{
+  app.get("/api/admin/store/orders",finance,(req,res)=>{
     cleanupExpired();
     const status=String(req.query.status||"");
     if(status&&!["pending","confirmed","paid","fulfilled","cancelled"].includes(status)) fail(400,"Invalid order status.");
@@ -232,7 +236,7 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     })));
   });
 
-  app.patch("/api/admin/store/orders/:id",(req,res)=>{
+  app.patch("/api/admin/store/orders/:id",finance,(req,res)=>{
     cleanupExpired();
     const order=db.prepare("SELECT * FROM store_orders WHERE id=?").get(String(req.params.id)) as Row|undefined;
     if(!order) fail(404,"Order not found.");
@@ -250,7 +254,7 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     res.json({ok:true});
   });
 
-  app.get("/api/admin/store/metrics",(_req,res)=>{
+  app.get("/api/admin/store/metrics",finance,(_req,res)=>{
     cleanupExpired();
     const sales=db.prepare("SELECT COALESCE(SUM(total_cents),0) AS revenue,COALESCE(SUM(total_cost_cents),0) AS cost,COUNT(*) AS orders FROM store_orders WHERE status IN ('paid','fulfilled')").get() as Row;
     const pending=(db.prepare("SELECT COUNT(*) AS n FROM store_orders WHERE status IN ('pending','confirmed')").get() as Row).n;
