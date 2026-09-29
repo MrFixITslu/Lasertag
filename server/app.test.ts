@@ -107,6 +107,26 @@ describe("Booking API security and workflows", () => {
         secureCookies: false,
       }),
     ).toThrow();
+    expect(() =>
+      createApp({
+        databasePath: ":memory:",
+        adminUsername: "admin",
+        adminPassword: password,
+        publicOrigin: origin,
+        secureCookies: false,
+        linkSecret: "short",
+      }),
+    ).toThrow(/LINK_SECRET/);
+    expect(() =>
+      createApp({
+        databasePath: ":memory:",
+        adminUsername: "admin",
+        adminPassword: password,
+        publicOrigin: origin,
+        secureCookies: false,
+        linkSecret: password,
+      }),
+    ).toThrow(/LINK_SECRET/);
     const service = await start();
     expect((await service.request("/api/admin/bookings")).status).toBe(401);
     expect(
