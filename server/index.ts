@@ -1,8 +1,13 @@
 import { createApp } from "./app";
+import fs from "node:fs";
 process.umask(0o077);
 const production = process.env.NODE_ENV === "production";
 const adminPassword = process.env.ADMIN_PASSWORD ?? "";
 const linkSecret = process.env.LINK_SECRET ?? "";
+const platformSecretFile = process.env.V79_PLATFORM_SHARED_SECRET_FILE ?? "/run/secrets/v79-readonly-platform-token";
+const platformSecret = String(process.env.V79_PLATFORM_SHARED_SECRET || "").trim() || (() => {
+  try { return fs.readFileSync(platformSecretFile, "utf8").trim(); } catch { return ""; }
+})();
 if (
   production &&
   (linkSecret.length < 32 || linkSecret === adminPassword)
@@ -17,7 +22,7 @@ const { app, db } = createApp({
   secureCookies: production || process.env.COOKIE_SECURE === "true",
   trustProxy: production ? 1 : 0,
   linkSecret: linkSecret || adminPassword,
-  platformSecret: process.env.V79_PLATFORM_SHARED_SECRET ?? "",
+  platformSecret,
 });
 const port = Number(process.env.PORT ?? 3000);
 const server = app.listen(port, "0.0.0.0", () =>
