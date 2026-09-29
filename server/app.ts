@@ -30,6 +30,7 @@ import { initOperations } from "./operations";
 import { installStore } from "./store";
 import { initMfa } from "./mfa";
 import type { BookingDraft } from "../src/types";
+import { installPlatformReadOnly } from "./platform";
 
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -195,6 +196,7 @@ export interface ServerConfig {
   trustProxy?: number;
   staticPath?: string;
   linkSecret?: string;
+  platformSecret?: string;
 }
 
 export function createApp(config: ServerConfig) {
@@ -286,6 +288,7 @@ export function createApp(config: ServerConfig) {
     next();
   });
   app.use(express.json({ limit: "20kb" }));
+  installPlatformReadOnly(app, db, config.platformSecret ?? "");
   const cookieOptions = {
     httpOnly: true,
     secure: config.secureCookies,
