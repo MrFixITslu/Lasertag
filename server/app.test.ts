@@ -317,6 +317,117 @@ describe("Booking API security and workflows", () => {
       ).status,
     ).toBe(409);
   });
+  it("runs Mission Control from check-in through scoring equipment and incidents", async () => {
+    const service = await start();
+    const names = Array.from({ length: 15 }, (_, index) => `Player ${index + 1}`);
+    const bookingResponse = await service.request("/api/bookings", "POST", draft({
+      missionId: "corporate-team-battle",
+      players: 15,
+      venueType: "event",
+      eventDetails: {
+        eventName: "Operations Challenge",
+        organization: "Test Company",
+        groupType: "corporate",
+        ageGroup: "adults",
+        emergencyContactName: "Event Lead",
+        emergencyContactPhone: "+17585550000",
+        objectives: "Teamwork",
+        accessibilityNotes: "",
+        photoConsent: false,
+        participantNames: names,
+      },
+    }), key());
+    const receipt = await bookingResponse.json();
+    const portal = await (await service.request(`/api/portal/${receipt.portalToken}`)).json();
+    const auth = await service.login();
+
+    for (const person of portal.participants.slice(0, 12)) {
+      expect((
+        await service.request(
+          `/api/admin/events/${portal.bookingId}/participants/${person.id}`,
+          "PATCH",
+          { checkedIn: true },
+          auth,
+        )
+      ).status).toBe(200);
+    }
+
+    const assigned = await service.request(
+      `/api/admin/events/${portal.bookingId}/equipment/auto-assign`,
+      "POST",
+      {},
+      auth,
+    );
+    expect(assigned.status).toBe(200);
+    const assignedData = await assigned.json();
+    const codes = assignedData.participants.filter((p: any) => p.equipmentCode).map((p: any) => p.equipmentCode);
+    expect(codes).toHaveLength(12);
+    expect(new Set(codes).size).toBe(12);
+
+    const schedule = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/generate`,
+      "POST",
+      { mode: "Team Battle", durationMinutes: 10 },
+      auth,
+    );
+    expect(schedule.status).toBe(200);
+    const scheduled = await schedule.json();
+    expect(scheduled.rounds).toHaveLength(3);
+    expect(scheduled.profile.eventStatus).toBe("ready");
+
+    const firstRound = scheduled.rounds[0];
+    const started = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/${firstRound.id}`,
+      "PATCH",
+      { action: "start" },
+      auth,
+    );
+    expect(started.status).toBe(200);
+    expect((await started.json()).rounds[0].status).toBe("live");
+
+    const completed = await service.request(
+      `/api/admin/events/${portal.bookingId}/rounds/${firstRound.id}`,
+      "PATCH",
+      { action: "complete", scoreA: 5, scoreB: 3, objectiveA: 1, objectiveB: 0, notes: "Clean round" },
+      auth,
+    );
+    expect(completed.status).toBe(200);
+    const scored = await completed.json();
+    expect(scored.rounds[0].status).toBe("completed");
+    expect(scored.leaderboard[0].points).toBe(3);
+
+    const final = await service.request(
+      `/api/admin/events/${portal.bookingId}/final`,
+      "POST",
+      { durationMinutes: 10 },
+      auth,
+    );
+    expect(final.status).toBe(200);
+    expect((await final.json()).rounds.at(-1).mode).toBe("Championship Final");
+
+    const incident = await service.request(
+      `/api/admin/events/${portal.bookingId}/incidents`,
+      "POST",
+      { kind: "equipment", note: "Tagger swapped during setup." },
+      auth,
+    );
+    expect(incident.status).toBe(201);
+    const incidentData = await incident.json();
+    expect(incidentData.incidents[0].resolved).toBe(false);
+
+    const gear = incidentData.equipment[0];
+    expect((
+      await service.request(
+        `/api/admin/equipment/${gear.code}`,
+        "PATCH",
+        { status: "charging", battery: 40, notes: "Recharge before next event" },
+        auth,
+      )
+    ).status).toBe(200);
+    const refreshed = await (await service.request(`/api/admin/events/${portal.bookingId}`, "GET", undefined, auth)).json();
+    expect(refreshed.equipment[0].status).toBe("charging");
+    expect(refreshed.equipment[0].battery).toBe(40);
+  });
   it("persists balanced corporate teams and their match rotation", async () => {
     const service = await start();
     await createOne(service, draft({
