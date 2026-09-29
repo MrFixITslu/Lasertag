@@ -14,6 +14,7 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in .env}
       LINK_SECRET: ${LINK_SECRET:?Set a separate random LINK_SECRET in .env}
+      V79_PLATFORM_SHARED_SECRET: ${V79_PLATFORM_SHARED_SECRET:?Set the same 32+ character platform secret as V79 Hub}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
