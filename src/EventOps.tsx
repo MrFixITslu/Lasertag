@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, BatteryCharging, Check, CirclePause, CirclePlay, Flag,
-  Lock, RefreshCw, RotateCcw, Shuffle, Trophy, Unlock, Users, Zap
+  AlertTriangle, BatteryCharging, Check, CirclePause, CirclePlay, Copy, Flag,
+  Image, Lock, RefreshCw, RotateCcw, Send, Shuffle, Trophy, Unlock, Users, Zap
 } from 'lucide-react';
 import { api } from './lib/api';
 import { TEAM_NAMES } from './lib/booking';
@@ -59,6 +59,9 @@ type Standing = {
   conceded: number;
   objectives: number;
 };
+type GalleryItem = { id:string; label:string; name:string; mime:string; url:string };
+type FeedbackItem = { id?:string; rating:number; comment:string; createdAt:string };
+type Communication = { type:string; sentAt:string; status:string; detail:string };
 type EventData = {
   serverNow: string;
   bookingId: string;
@@ -84,6 +87,11 @@ type EventData = {
   leaderboard: Standing[];
   equipment: Equipment[];
   incidents: Incident[];
+  registrationUrl: string;
+  joinUrl: string;
+  gallery: GalleryItem[];
+  feedback: FeedbackItem[];
+  communications: Communication[];
 };
 
 const teamName = (index: number) => TEAM_NAMES[index] || `TEAM ${index + 1}`;
@@ -102,6 +110,9 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
   const [roundMinutes, setRoundMinutes] = useState(10);
   const [incidentKind, setIncidentKind] = useState('safety');
   const [incidentNote, setIncidentNote] = useState('');
+  const [media, setMedia] = useState<Array<{id:string;name:string;mime:string}>>([]);
+  const [mediaId,setMediaId]=useState('');
+  const [galleryLabel,setGalleryLabel]=useState('Event photo');
 
   const load = async () => {
     setError('');
@@ -109,6 +120,10 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
     catch (err) { setError(err instanceof Error ? err.message : 'Could not load event operations.'); }
   };
   useEffect(() => { load(); }, [bookingId]);
+  useEffect(() => {
+    if (session.role !== 'admin') return;
+    api<Array<{id:string;name:string;mime:string}>>('/api/admin/media').then(setMedia).catch(() => setMedia([]));
+  }, [session.role, bookingId]);
   useEffect(() => {
     if (!data?.rounds.some((round) => round.status === 'live')) return;
     const id = window.setInterval(() => setTick(Date.now()), 1000);
@@ -124,7 +139,7 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
     return [...result.entries()].sort(([a],[b])=>a-b);
   }, [data]);
 
-  async function request(path: string, method: 'POST' | 'PATCH', body: unknown, message = 'Event plan updated.') {
+  async function request(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown, message = 'Event plan updated.') {
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await api<EventData>(path, {
@@ -160,6 +175,28 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
       await load(); setNotice(`${item.code} updated.`);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not update equipment.'); }
     finally { setBusy(false); }
+  }
+
+  async function attachMedia(){
+    if(!mediaId) return;
+    await command(`/api/admin/events/${bookingId}/media`,{mediaId,label:galleryLabel},'Media added to the customer event gallery.');
+  }
+  async function detachMedia(id:string){
+    await request(`/api/admin/events/${bookingId}/media/${id}`,'DELETE',{},'Media removed from this event gallery.');
+  }
+  async function sendMessage(type:string){
+    setBusy(true); setError(''); setNotice('');
+    try{
+      await api(`/api/admin/events/${bookingId}/send-message`,{
+        method:'POST',headers:{'X-CSRF-Token':session.csrf},body:JSON.stringify({type})
+      });
+      await load(); setNotice(`${type.replaceAll('_',' ')} message sent.`);
+    }catch(err){setError(err instanceof Error?err.message:'Could not send event message.');}
+    finally{setBusy(false);}
+  }
+  async function copyLink(value:string,label:string){
+    try{await navigator.clipboard.writeText(value);setNotice(`${label} copied.`);}
+    catch{setNotice('Copy unavailable. Open the link and share it from your browser.');}
   }
 
   async function incident(event: FormEvent) {
@@ -246,6 +283,26 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
         </table>
       </div>
       {teams.length > 0 && <p className="admin-help">Current teams: {teams.map(([index,members])=>`${teamName(index)}: ${members.length}`).join(' · ')}</p>}
+
+      <section className="admin-customer-notes">
+        <div className="panel-label"><Send size={15}/> CUSTOMER EXPERIENCE</div>
+        <p>Share the participant invite while keeping the organizer registration link private.</p>
+        <div className="nav-actions">
+          {data.joinUrl && <button type="button" className="secondary-action" onClick={()=>copyLink(data.joinUrl,'Participant invite')}><Copy size={15}/> COPY PARTICIPANT INVITE</button>}
+          {data.registrationUrl && <button type="button" className="secondary-action" onClick={()=>copyLink(data.registrationUrl,'Organizer link')}><Copy size={15}/> COPY ORGANIZER LINK</button>}
+          <button type="button" className="secondary-action" disabled={busy} onClick={()=>sendMessage('confirmation')}><Send size={15}/> SEND CONFIRMATION</button>
+          <button type="button" className="secondary-action" disabled={busy} onClick={()=>sendMessage('reminder_1d')}><Send size={15}/> SEND REMINDER</button>
+          <button type="button" className="secondary-action" disabled={busy || data.profile.eventStatus!=='complete'} onClick={()=>sendMessage('results')}><Trophy size={15}/> SEND RESULTS</button>
+        </div>
+        {session.role==='admin' && <div className="admin-edit-grid">
+          <label>Gallery media<select value={mediaId} onChange={(e)=>setMediaId(e.target.value)}><option value="">Choose uploaded media</option>{media.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+          <label>Gallery label<input maxLength={120} value={galleryLabel} onChange={(e)=>setGalleryLabel(e.target.value)}/></label>
+          <button type="button" className="secondary-action" disabled={!mediaId||busy} onClick={attachMedia}><Image size={15}/> ADD TO EVENT GALLERY</button>
+        </div>}
+        {data.gallery.length>0 && <div className="business-table"><table><thead><tr><th>Gallery item</th><th>Type</th><th></th></tr></thead><tbody>{data.gallery.map(item=><tr key={item.id}><td><a href={item.url} target="_blank" rel="noreferrer">{item.label||item.name}</a></td><td>{item.mime}</td><td>{session.role==='admin'&&<button type="button" className="admin-text-button" onClick={()=>detachMedia(item.id)}>Remove</button>}</td></tr>)}</tbody></table></div>}
+        {data.feedback.length>0 && <div className="admin-customer-notes"><strong>Customer feedback</strong>{data.feedback.map((item,index)=><p key={index}>{item.rating}/5 · {item.comment||'No comment'}</p>)}</div>}
+        {data.communications.length>0 && <p className="admin-help">Messages: {data.communications.map(item=>`${item.type}: ${item.status}`).join(' · ')}</p>}
+      </section>
 
       <section className="admin-customer-notes">
         <div className="admin-panel-header"><span><BatteryCharging size={15}/> EQUIPMENT READINESS</span>
