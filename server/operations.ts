@@ -403,12 +403,12 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
         waiverSigned:Boolean(item.waiverSigned),checkedIn:Boolean(item.checkedIn),
         teamIndex:item.teamIndex,equipmentCode:includePrivate ? item.equipmentCode : "",
         active:Boolean(item.active),createdAt:item.createdAt,updatedAt:item.updatedAt,
-        checkInUrl:item.checkinValue ? `${publicOrigin}/checkin/${item.checkinValue}` : "",
+        checkInUrl:item.checkinValue ? (()=>{const token=openSecret(item.checkinValue);return token?`${publicOrigin}/checkin/${token}`:"";})() : "",
       })),
       registeredPlayers: active.length,
       rosterTeamSizes: sizes,
-      joinUrl: invite?.token_value ? `${publicOrigin}/join/${invite.token_value}` : "",
-      registrationUrl: portalRecord?.token_value ? `${publicOrigin}/manage/${portalRecord.token_value}` : "",
+      joinUrl: invite?.token_value ? (()=>{const token=openSecret(invite.token_value);return token?`${publicOrigin}/join/${token}`:"";})() : "",
+      registrationUrl: portalRecord?.token_value ? (()=>{const token=openSecret(portalRecord.token_value);return token?`${publicOrigin}/manage/${token}`:"";})() : "",
       rounds: roundData(bookingId),
       leaderboard: leaderboard(bookingId),
       gallery: gallery.map((item)=>({id:item.id,label:item.label,name:item.name,mime:item.mime,url:`/uploads/${item.id}`})),
@@ -447,10 +447,11 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     const profile = db.prepare("SELECT event_name,organization,event_status FROM event_profiles WHERE booking_id=?")
       .get(bookingId) as Row | undefined;
     const portal = db.prepare("SELECT token_value FROM booking_portals WHERE booking_id=?").get(bookingId) as Row | undefined;
-    const token = portalTokenOverride || String(portal?.token_value || "");
+    const token = portalTokenOverride || openSecret(portal?.token_value);
     const registrationUrl = token ? `${publicOrigin}/manage/${token}` : publicOrigin;
     const join = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
-    const joinUrl = join?.token_value ? `${publicOrigin}/join/${join.token_value}` : "";
+    const joinToken=openSecret(join?.token_value);
+    const joinUrl = joinToken ? `${publicOrigin}/join/${joinToken}` : "";
     const eventName = profile?.event_name || payload.mission?.name || "CombatZone mission";
     const dates = `${booking.date} at ${booking.time} AST`;
     const messages = {
