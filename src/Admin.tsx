@@ -14,6 +14,7 @@ import Brand from "./Brand";
 import Kpis from "./Kpis";
 import { BusinessConsole, type AdminSession } from "./BusinessConsole";
 import EventOps from "./EventOps";
+import StoreAdmin from "./StoreAdmin";
 import { api, ApiError } from "./lib/api";
 import {
   buildDateChoices,
@@ -392,7 +393,7 @@ export default function Admin() {
               {[
                 "bookings",
                 "kpis",
-                ...(session.finance ? ["finance"] : []),
+                ...(session.finance ? ["finance", "store"] : []),
                 ...(session.role === "admin"
                   ? [
                       "marketing",
@@ -423,6 +424,7 @@ export default function Admin() {
                         bookings: "Bookings",
                         kpis: "KPIs",
                         finance: "Income",
+                        store: "Store",
                         marketing: "Campaign lab",
                         audience: "Audience",
                         email: "Email",
@@ -437,6 +439,8 @@ export default function Admin() {
             </nav>
             {section === "kpis" ? (
               <Kpis session={session} />
+            ) : section === "store" ? (
+              <StoreAdmin session={session} />
             ) : section !== "bookings" ? (
               <BusinessConsole
                 key={section}
