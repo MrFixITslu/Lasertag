@@ -372,11 +372,14 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       ? Array.from({length:highestTeam+1},(_,index)=>assigned.filter((item)=>Number(item.teamIndex)===index).length)
       : [];
     const nonEmptyActual = actualTeamSizes.filter((size)=>size>0);
+    const teamSpread = nonEmptyActual.length
+      ? Math.max(...nonEmptyActual) - Math.min(...nonEmptyActual)
+      : 0;
     const teamBalanceWarning =
       active.length < 2 ||
       unassignedPlayers > 0 ||
       nonEmptyActual.length < 2 ||
-      Math.max(...nonEmptyActual,0)-Math.min(...nonEmptyActual,0)>1;
+      teamSpread > 1;
     const sizes = actualTeamSizes.length ? actualTeamSizes : recommendedTeamSizes;
     const invite = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
     const portalRecord = includePrivate
