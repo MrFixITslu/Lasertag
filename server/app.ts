@@ -27,6 +27,7 @@ import {
 import { installKpis, validVisit, hashVisit } from "./kpis";
 import { installBusiness } from "./business";
 import { initOperations } from "./operations";
+import { installStore } from "./store";
 import type { BookingDraft } from "../src/types";
 
 const digest = (value: string) =>
@@ -539,6 +540,7 @@ export function createApp(config: ServerConfig) {
     return value;
   }
   operations.installRoutes(app, { fail, text, getBooking });
+  installStore(app, db, { fail, text });
   installBusiness(app, db, config, {
     fail,
     text,
@@ -637,7 +639,10 @@ export function createApp(config: ServerConfig) {
       maxAge: "1h",
     }),
   );
-  app.get(["/", "/admin", "/admin/", "/manage/:token", "/store", "/store/"], (req, res) => {
+  app.get([
+    "/", "/admin", "/admin/", "/manage/:token", "/join/:token", "/checkin/:token",
+    "/store", "/store/", "/store/order/:reference/:token"
+  ], (req, res) => {
     res.set("Cache-Control", "no-store");
     if (req.path.startsWith("/admin"))
       res.set("X-Robots-Tag", "noindex, nofollow");
