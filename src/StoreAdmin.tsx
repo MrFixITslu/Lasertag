@@ -5,7 +5,7 @@ import type { AdminSession } from './BusinessConsole';
 
 type Product={id:string;slug:string;name:string;description:string;kind:string;price_cents:number;cost_cents:number;currency:string;stock_qty:number;active:number;delivery_text:string};
 type Order={id:string;reference:string;createdAt:string;status:string;customerName:string;email:string;phone:string;fulfillment:string;address:string;notes:string;totalCents:number;totalCostCents:number;currency:string;items:Array<{name:string;kind:string;quantity:number;unitPriceCents:number}>};
-type Metrics={revenueCents:number;costCents:number;grossMarginCents:number;orders:number;pending:number;lowStock:Array<{id:string;name:string;stock_qty:number}>};
+type Metrics={byCurrency:Array<{currency:string;revenueCents:number;costCents:number;grossMarginCents:number;orders:number}>;pending:number;lowStock:Array<{id:string;name:string;stock_qty:number}>};
 const money=(c:number,cur='XCD')=>`${cur==='USD'?'US$':'EC$'}${(c/100).toFixed(2)}`;
 
 export default function StoreAdmin({session}:{session:AdminSession}){
@@ -24,7 +24,10 @@ export default function StoreAdmin({session}:{session:AdminSession}){
   async function patchOrder(o:Order,status:string){setBusy(true);try{await api(`/api/admin/store/orders/${o.id}`,{method:'PATCH',headers,body:JSON.stringify({status,paymentMethod:status==='paid'?'Recorded by staff':'pending'})});setNotice(`Order ${o.reference} updated.`);await load();}catch(e){setError(e instanceof Error?e.message:'Could not update order.');}finally{setBusy(false);}}
   return <section className="business-panel hud-panel">
     <div className="admin-panel-header"><span><StoreIcon size={16}/> STORE MANAGEMENT</span><button className="admin-text-button" onClick={load}><RefreshCw size={14}/> Refresh</button></div>
-    {metrics&&<div className="admin-stats"><div><span>Revenue</span><strong>{money(metrics.revenueCents)}</strong></div><div><span>Gross margin</span><strong>{money(metrics.grossMarginCents)}</strong></div><div><span>Paid/Fulfilled</span><strong>{metrics.orders}</strong></div><div><span>Pending</span><strong>{metrics.pending}</strong></div></div>}
+    {metrics&&<><div className="admin-stats">{metrics.byCurrency.length?metrics.byCurrency.flatMap((row)=>[
+      <div key={`${row.currency}-revenue`}><span>{row.currency} revenue</span><strong>{money(row.revenueCents,row.currency)}</strong></div>,
+      <div key={`${row.currency}-margin`}><span>{row.currency} gross margin</span><strong>{money(row.grossMarginCents,row.currency)}</strong></div>
+    ]):<div><span>Paid/Fulfilled</span><strong>0</strong></div>}<div><span>Pending</span><strong>{metrics.pending}</strong></div></div></>}
     {metrics?.lowStock.length?<p className="prototype-warning">Low stock: {metrics.lowStock.map((p)=>`${p.name} (${p.stock_qty})`).join(' · ')}</p>:null}
     {notice&&<p className="demo-note">{notice}</p>}{error&&<p className="prototype-warning" role="alert">{error}</p>}
     <form className="admin-edit" onSubmit={create}><h3><PackagePlus size={15}/> ADD PRODUCT</h3><div className="admin-edit-grid">
