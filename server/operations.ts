@@ -387,7 +387,12 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       equipment: includePrivate ? db.prepare("SELECT code,status,battery,notes,updated_at AS updatedAt FROM equipment ORDER BY code").all() : [],
       incidents: includePrivate ? db.prepare("SELECT id,at,kind,note,resolved,resolved_at AS resolvedAt FROM event_incidents WHERE booking_id=? ORDER BY at DESC").all(bookingId)
         .map((item: Row) => ({...item,resolved:Boolean(item.resolved)})) : [],
-      feedback: includePrivate ? db.prepare("SELECT id,rating,comment,created_at AS createdAt FROM event_feedback WHERE booking_id=? ORDER BY created_at DESC").all(bookingId) : [],
+      feedback: includePrivate
+        ? db.prepare("SELECT id,rating,comment,created_at AS createdAt FROM event_feedback WHERE booking_id=? ORDER BY created_at DESC").all(bookingId)
+        : db.prepare("SELECT rating,comment,created_at AS createdAt FROM event_feedback WHERE booking_id=? ORDER BY created_at DESC LIMIT 1").all(bookingId),
+      communications: includePrivate
+        ? db.prepare("SELECT type,sent_at AS sentAt,status,detail FROM communications WHERE booking_id=? ORDER BY sent_at DESC").all(bookingId)
+        : [],
     };
   }
 
@@ -817,9 +822,50 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       res.json(eventData(booking.id));
     });
 
+    app.post("/api/portal/:token/feedback", portal, (req,res) => {
+      const booking=(req as any).portalBooking as Row;
+      const profile=db.prepare("SELECT event_status FROM event_profiles WHERE booking_id=?").get(booking.id) as Row | undefined;
+      if(profile?.event_status!=="complete") fail(409,"Feedback opens after the event is completed.");
+      const rating=Number(req.body.rating);
+      if(!Number.isInteger(rating) || rating<1 || rating>5) fail(400,"Choose a rating from 1 to 5.");
+      const comment=text(req.body.comment ?? "","feedback",2000);
+      db.prepare("DELETE FROM event_feedback WHERE booking_id=?").run(booking.id);
+      db.prepare("INSERT INTO event_feedback(id,booking_id,rating,comment,created_at) VALUES(?,?,?,?,?)")
+        .run(randomUUID(),booking.id,rating,comment,now());
+      res.status(201).json({ok:true});
+    });
+
     app.get("/api/admin/events/:bookingId", (req, res) => {
       getBooking(String(req.params.bookingId));
       res.json(eventData(String(req.params.bookingId), true));
+    });
+
+    app.post("/api/admin/events/:bookingId/media", (req,res) => {
+      const bookingId=String(req.params.bookingId);
+      getBooking(bookingId);
+      const mediaId=text(req.body.mediaId,"media",120,2);
+      if(!db.prepare("SELECT id FROM media WHERE id=?").get(mediaId)) fail(400,"Choose valid media.");
+      const label=text(req.body.label ?? "Event photo","gallery label",120);
+      db.prepare("INSERT INTO event_media(booking_id,media_id,label) VALUES(?,?,?) ON CONFLICT(booking_id,media_id) DO UPDATE SET label=excluded.label")
+        .run(bookingId,mediaId,label);
+      db.prepare("UPDATE media SET public=1 WHERE id=?").run(mediaId);
+      res.json(eventData(bookingId,true));
+    });
+
+    app.delete("/api/admin/events/:bookingId/media/:mediaId", (req,res) => {
+      const bookingId=String(req.params.bookingId);
+      getBooking(bookingId);
+      db.prepare("DELETE FROM event_media WHERE booking_id=? AND media_id=?").run(bookingId,String(req.params.mediaId));
+      res.json(eventData(bookingId,true));
+    });
+
+    app.post("/api/admin/events/:bookingId/communications", async (req,res) => {
+      const bookingId=String(req.params.bookingId);
+      getBooking(bookingId);
+      const allowed=["confirmation","reminder_7d","reminder_1d","results"] as const;
+      if(!allowed.includes(req.body.type)) fail(400,"Choose a valid message type.");
+      const result=await sendEventMessage(bookingId,req.body.type);
+      res.status(result.sent ? 200 : 503).json({ ...result, event:eventData(bookingId,true) });
     });
 
     app.post("/api/admin/events/:bookingId/rebalance", (req, res) => {
