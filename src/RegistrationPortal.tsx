@@ -230,7 +230,7 @@ export default function RegistrationPortal() {
           <label><span>Parent / Guardian — when applicable</span><input maxLength={120} value={participant.guardianName} onChange={(e)=>setParticipant({...participant,guardianName:e.target.value})}/></label>
           <label><span>Guardian Phone</span><input type="tel" maxLength={30} value={participant.guardianPhone} onChange={(e)=>setParticipant({...participant,guardianPhone:e.target.value})}/></label>
         </>}
-        <label className="tactical-checkbox inline-check"><input type="checkbox" checked={participant.waiverSigned} onChange={(e)=>setParticipant({...participant,waiverSigned:e.target.checked)}/><span className="checkbox-box"><Check size={14}/></span><span>Safety/participation acknowledgement has been completed for this participant.</span></label>
+        <label className="tactical-checkbox inline-check"><input type="checkbox" checked={participant.waiverSigned} onChange={(e)=>setParticipant({...participant,waiverSigned:e.target.checked})}/><span className="checkbox-box"><Check size={14}/></span><span>Safety/participation acknowledgement has been completed for this participant.</span></label>
         <button className="primary-action" disabled={busy || profile.rosterLocked || data.registeredPlayers>=data.expectedPlayers}><UserPlus size={17}/> ADD TO ROSTER</button>
       </form>
 
