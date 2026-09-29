@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, BatteryCharging, Check, CirclePause, CirclePlay, Copy, Flag,
-  Image, Lock, RefreshCw, RotateCcw, Send, Shuffle, Trophy, Unlock, Users, Zap
+  AlertTriangle, BatteryCharging, Check, CirclePause, CirclePlay, Copy, DollarSign, Flag,
+  Image, Lock, RefreshCw, RotateCcw, Send, Shuffle, Trash2, Trophy, Unlock, Users, Zap
 } from 'lucide-react';
 import { api } from './lib/api';
 import { TEAM_NAMES } from './lib/booking';
@@ -62,6 +62,7 @@ type Standing = {
 type GalleryItem = { id:string; label:string; name:string; mime:string; url:string };
 type FeedbackItem = { id?:string; rating:number; comment:string; createdAt:string };
 type Communication = { type:string; sentAt:string; status:string; detail:string };
+type EventCost = { id:string; category:string; cents:number; note:string; actor:string; createdAt:string };
 type EventData = {
   serverNow: string;
   bookingId: string;
@@ -113,6 +114,10 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
   const [media, setMedia] = useState<Array<{id:string;name:string;mime:string}>>([]);
   const [mediaId,setMediaId]=useState('');
   const [galleryLabel,setGalleryLabel]=useState('Event photo');
+  const [costs,setCosts]=useState<EventCost[]>([]);
+  const [costCategory,setCostCategory]=useState('staffing');
+  const [costAmount,setCostAmount]=useState('');
+  const [costNote,setCostNote]=useState('');
 
   const load = async () => {
     setError('');
@@ -124,6 +129,10 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
     if (session.role !== 'admin') return;
     api<Array<{id:string;name:string;mime:string}>>('/api/admin/media').then(setMedia).catch(() => setMedia([]));
   }, [session.role, bookingId]);
+  useEffect(() => {
+    if (!session.finance) return;
+    api<{rows:EventCost[]}>(`/api/admin/events/${bookingId}/costs`).then((value)=>setCosts(value.rows)).catch(()=>setCosts([]));
+  }, [session.finance, bookingId]);
   useEffect(() => {
     if (!data?.rounds.some((round) => round.status === 'live')) return;
     const id = window.setInterval(() => setTick(Date.now()), 1000);
@@ -197,6 +206,33 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
   async function copyLink(value:string,label:string){
     try{await navigator.clipboard.writeText(value);setNotice(`${label} copied.`);}
     catch{setNotice('Copy unavailable. Open the link and share it from your browser.');}
+  }
+
+  async function addCost(event: FormEvent) {
+    event.preventDefault();
+    const amount = Number(costAmount);
+    if (!Number.isFinite(amount) || amount < 0) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api<{rows:EventCost[]}>(`/api/admin/events/${bookingId}/costs`, {
+        method:'POST',
+        headers:{'X-CSRF-Token':session.csrf},
+        body:JSON.stringify({category:costCategory,cents:Math.round(amount*100),note:costNote})
+      });
+      setCosts(result.rows); setCostAmount(''); setCostNote(''); setNotice('Event cost recorded.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not record event cost.'); }
+    finally { setBusy(false); }
+  }
+  async function removeCost(id:string) {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await api(`/api/admin/events/${bookingId}/costs/${id}`, {
+        method:'DELETE',headers:{'X-CSRF-Token':session.csrf},body:'{}'
+      });
+      const result=await api<{rows:EventCost[]}>(`/api/admin/events/${bookingId}/costs`);
+      setCosts(result.rows); setNotice('Event cost removed.');
+    } catch(err){ setError(err instanceof Error?err.message:'Could not remove event cost.'); }
+    finally{ setBusy(false); }
   }
 
   async function incident(event: FormEvent) {
@@ -303,6 +339,19 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
         {data.feedback.length>0 && <div className="admin-customer-notes"><strong>Customer feedback</strong>{data.feedback.map((item,index)=><p key={index}>{item.rating}/5 · {item.comment||'No comment'}</p>)}</div>}
         {data.communications.length>0 && <p className="admin-help">Messages: {data.communications.map(item=>`${item.type}: ${item.status}`).join(' · ')}</p>}
       </section>
+
+      {session.finance && <section className="admin-customer-notes">
+        <div className="panel-label"><DollarSign size={15}/> EVENT COSTS & MARGIN INPUTS</div>
+        <form className="admin-edit-grid" onSubmit={addCost}>
+          <label>Category<select value={costCategory} onChange={(e)=>setCostCategory(e.target.value)}><option value="staffing">Staffing</option><option value="travel">Travel</option><option value="venue">Venue</option><option value="equipment">Equipment</option><option value="supplies">Supplies</option><option value="marketing">Marketing</option><option value="other">Other</option></select></label>
+          <label>Amount (EC$)<input type="number" min="0" step="0.01" required value={costAmount} onChange={(e)=>setCostAmount(e.target.value)}/></label>
+          <label>Note<input maxLength={500} value={costNote} onChange={(e)=>setCostNote(e.target.value)} placeholder="Staff hours, fuel, venue fee…"/></label>
+          <button className="secondary-action" disabled={busy}>ADD COST</button>
+        </form>
+        <div className="business-table"><table><thead><tr><th>Category</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>
+          {costs.map((item)=><tr key={item.id}><td>{item.category}</td><td>EC${(item.cents/100).toFixed(2)}</td><td>{item.note}</td><td><button type="button" className="admin-icon-button" onClick={()=>removeCost(item.id)} disabled={busy}><Trash2 size={14}/></button></td></tr>)}
+        </tbody><tfoot><tr><th>Total</th><th>EC${(costs.reduce((sum,item)=>sum+item.cents,0)/100).toFixed(2)}</th><th colSpan={2}></th></tr></tfoot></table></div>
+      </section>}
 
       <section className="admin-customer-notes">
         <div className="admin-panel-header"><span><BatteryCharging size={15}/> EQUIPMENT READINESS</span>
