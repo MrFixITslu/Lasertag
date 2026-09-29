@@ -14,6 +14,14 @@ const money=(value:number)=>Math.round(value);
 
 export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
   const {fail,text}=helpers;
+  const required=<T>(value:T|undefined,message:string):T=>{
+    if(!value) fail(404,message);
+    return value as T;
+  };
+  const adminOnly=(_req:Request,res:Response,next:NextFunction)=>
+    res.locals.user?.role==="admin"
+      ? next()
+      : next(Object.assign(new Error("Admin access required."),{status:403}));
   const finance = (_req:Request,res:Response,next:NextFunction) =>
     res.locals.user?.role === "admin" || Boolean(res.locals.user?.finance)
       ? next()
@@ -66,19 +74,6 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     );
     CREATE INDEX IF NOT EXISTS store_orders_status_date ON store_orders(status,created_at);
   `);
-
-  const seed=[
-    ["combat-zone-gift-pass","CombatZone Gift Pass","Digital gift credit for a future CombatZone booking.","digital",5000,0,"XCD",0,"Present this order reference when booking. Value: EC$50."],
-    ["battle-photo-pack","Battle Photo Pack","Digital event photo pack delivered after your mission.","digital",3500,500,"XCD",0,"Your download/gallery instructions will appear here after fulfillment."],
-    ["combat-zone-tee","CombatZone SLU T-Shirt","CombatZone branded T-shirt. Size confirmed before fulfillment.","physical",6500,3000,"XCD",20,""],
-    ["team-wristband","CombatZone Team Wristband","Reusable branded team wristband.","physical",1500,500,"XCD",60,""],
-  ] as const;
-  for(const [slug,name,description,kind,price,cost,currency,stock,delivery] of seed){
-    db.prepare(`
-      INSERT OR IGNORE INTO store_products(id,slug,name,description,kind,price_cents,cost_cents,currency,stock_qty,active,delivery_text,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)
-    `).run(randomUUID(),slug,name,description,kind,price,cost,currency,stock,delivery,now(),now());
-  }
 
   function cleanupExpired(){
     const rows=db.prepare("SELECT id FROM store_orders WHERE status='pending' AND reservation_expires_at<?").all(now()) as Row[];
@@ -156,7 +151,11 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
         const qty=requested.get(p.id)!;
         db.prepare("INSERT INTO store_order_items(order_id,product_id,name,kind,quantity,unit_price_cents,unit_cost_cents) VALUES(?,?,?,?,?,?,?)")
           .run(id,p.id,p.name,p.kind,qty,p.price_cents,p.cost_cents);
-        if(p.kind==="physical") db.prepare("UPDATE store_products SET stock_qty=stock_qty-?,updated_at=? WHERE id=?").run(qty,now(),p.id);
+        if(p.kind==="physical"){
+          const updated=db.prepare("UPDATE store_products SET stock_qty=stock_qty-?,updated_at=? WHERE id=? AND stock_qty>=?")
+            .run(qty,now(),p.id,qty);
+          if(!updated.changes) fail(409,`${p.name} no longer has enough stock for that quantity.`);
+        }
       }
       db.exec("COMMIT");
     }catch(error){db.exec("ROLLBACK");throw error;}
@@ -165,9 +164,11 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
 
   app.get("/api/store/orders/:reference/:token",(req,res)=>{
     cleanupExpired();
-    const order=db.prepare("SELECT * FROM store_orders WHERE reference=? AND access_hash=?")
-      .get(String(req.params.reference),digest(String(req.params.token))) as Row|undefined;
-    if(!order) fail(404,"Store order not found.");
+    const order=required(
+      db.prepare("SELECT * FROM store_orders WHERE reference=? AND access_hash=?")
+        .get(String(req.params.reference),digest(String(req.params.token))) as Row|undefined,
+      "Store order not found."
+    );
     const items=db.prepare(`
       SELECT oi.name,oi.kind,oi.quantity,oi.unit_price_cents AS unitPriceCents,
              CASE WHEN o.status='fulfilled' AND oi.kind='digital' THEN p.delivery_text ELSE '' END AS deliveryText
@@ -181,10 +182,10 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     });
   });
 
-  app.get("/api/admin/store/products",finance,(_req,res)=>{
+  app.get("/api/admin/store/products",adminOnly,(_req,res)=>{
     res.json(db.prepare("SELECT * FROM store_products ORDER BY active DESC,kind,name").all());
   });
-  app.post("/api/admin/store/products",finance,(req,res)=>{
+  app.post("/api/admin/store/products",adminOnly,(req,res)=>{
     const slug=text(req.body.slug,"slug",80,2).toLowerCase();
     if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) fail(400,"Use a URL-safe product slug.");
     const kind=["physical","digital"].includes(req.body.kind)?req.body.kind:null;
@@ -199,9 +200,11 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
     `).run(id,slug,text(req.body.name,"product name",120,2),text(req.body.description??"","description",1500),kind,price,cost,currency,kind==="physical"?stock:0,req.body.active===false?0:1,text(req.body.deliveryText??"","digital delivery",3000),stamp,stamp);
     res.status(201).json({id});
   });
-  app.patch("/api/admin/store/products/:id",finance,(req,res)=>{
-    const current=db.prepare("SELECT * FROM store_products WHERE id=?").get(String(req.params.id)) as Row|undefined;
-    if(!current) fail(404,"Product not found.");
+  app.patch("/api/admin/store/products/:id",adminOnly,(req,res)=>{
+    const current=required(
+      db.prepare("SELECT * FROM store_products WHERE id=?").get(String(req.params.id)) as Row|undefined,
+      "Product not found."
+    );
     const kind=["physical","digital"].includes(req.body.kind)?req.body.kind:current.kind;
     const price=req.body.priceCents===undefined?current.price_cents:Number(req.body.priceCents);
     const cost=req.body.costCents===undefined?current.cost_cents:Number(req.body.costCents);
@@ -238,8 +241,10 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
 
   app.patch("/api/admin/store/orders/:id",finance,(req,res)=>{
     cleanupExpired();
-    const order=db.prepare("SELECT * FROM store_orders WHERE id=?").get(String(req.params.id)) as Row|undefined;
-    if(!order) fail(404,"Order not found.");
+    const order=required(
+      db.prepare("SELECT * FROM store_orders WHERE id=?").get(String(req.params.id)) as Row|undefined,
+      "Order not found."
+    );
     const next=String(req.body.status||"");
     if(!["pending","confirmed","paid","fulfilled","cancelled"].includes(next)) fail(400,"Choose a valid order status.");
     if(order.status==="fulfilled"&&next!=="fulfilled") fail(409,"A fulfilled order cannot be moved backwards.");
@@ -256,9 +261,15 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers){
 
   app.get("/api/admin/store/metrics",finance,(_req,res)=>{
     cleanupExpired();
-    const sales=db.prepare("SELECT COALESCE(SUM(total_cents),0) AS revenue,COALESCE(SUM(total_cost_cents),0) AS cost,COUNT(*) AS orders FROM store_orders WHERE status IN ('paid','fulfilled')").get() as Row;
+    const byCurrency=(db.prepare(`
+      SELECT currency,COALESCE(SUM(total_cents),0) AS revenue,COALESCE(SUM(total_cost_cents),0) AS cost,COUNT(*) AS orders
+      FROM store_orders WHERE status IN ('paid','fulfilled') GROUP BY currency ORDER BY currency
+    `).all() as Row[]).map(row=>({
+      currency:row.currency,revenueCents:Number(row.revenue),costCents:Number(row.cost),
+      grossMarginCents:Number(row.revenue)-Number(row.cost),orders:Number(row.orders)
+    }));
     const pending=(db.prepare("SELECT COUNT(*) AS n FROM store_orders WHERE status IN ('pending','confirmed')").get() as Row).n;
     const lowStock=db.prepare("SELECT id,name,stock_qty FROM store_products WHERE active=1 AND kind='physical' AND stock_qty<=5 ORDER BY stock_qty,name").all();
-    res.json({revenueCents:sales.revenue,costCents:sales.cost,grossMarginCents:sales.revenue-sales.cost,orders:sales.orders,pending,lowStock});
+    res.json({byCurrency,pending,lowStock});
   });
 }
