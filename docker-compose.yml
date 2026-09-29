@@ -37,9 +37,12 @@ services:
       - proxy_network
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:size=256m,nosuid,nodev
 
 volumes:
   booking_data:
