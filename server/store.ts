@@ -90,6 +90,18 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
       unit_cost_cents INTEGER NOT NULL,
       PRIMARY KEY(order_id,product_id)
     );
+    CREATE TABLE IF NOT EXISTS store_order_payments(
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL REFERENCES store_orders(id) ON DELETE CASCADE,
+      cents INTEGER NOT NULL CHECK(cents>0),
+      kind TEXT NOT NULL CHECK(kind IN ('payment','refund')),
+      method TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      request_key TEXT UNIQUE NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS store_order_payments_order ON store_order_payments(order_id,created_at);
     CREATE INDEX IF NOT EXISTS store_orders_status_date ON store_orders(status,created_at);
   `);
 
@@ -261,6 +273,13 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
     res.json({ok:true});
   });
 
+  const paymentBalance=(orderId:string)=>{
+    const rows=db.prepare("SELECT cents,kind FROM store_order_payments WHERE order_id=?").all(orderId) as Row[];
+    const paid=rows.filter((row)=>row.kind==="payment").reduce((sum,row)=>sum+Number(row.cents),0);
+    const refunded=rows.filter((row)=>row.kind==="refund").reduce((sum,row)=>sum+Number(row.cents),0);
+    return {paid,refunded,net:paid-refunded};
+  };
+
   app.get("/api/admin/store/orders",finance,(req,res)=>{
     cleanupExpired();
     const status=String(req.query.status||"");
@@ -271,6 +290,7 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
       customerName:order.customer_name,email:order.email,phone:order.phone,fulfillment:order.fulfillment,
       address:order.address,notes:order.notes,totalCents:order.total_cents,totalCostCents:order.total_cost_cents,
       currency:order.currency,reservationExpiresAt:order.reservation_expires_at,
+      payment:paymentBalance(order.id),
       items:db.prepare("SELECT product_id AS productId,name,kind,quantity,unit_price_cents AS unitPriceCents FROM store_order_items WHERE order_id=?").all(order.id)
     })));
   });
@@ -285,7 +305,10 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
     if(!["pending","confirmed","paid","fulfilled","cancelled"].includes(next)) fail(400,"Choose a valid order status.");
     if(order.status==="fulfilled"&&next!=="fulfilled") fail(409,"A fulfilled order cannot be moved backwards.");
     if(order.status==="cancelled"&&next!=="cancelled") fail(409,"A cancelled order cannot be reopened.");
-    if(next==="fulfilled"&&!["paid","fulfilled"].includes(order.status)) fail(409,"Record payment before fulfillment.");
+    const balance=paymentBalance(order.id);
+    if(next==="paid"&&balance.net<order.total_cents) fail(409,"Record the full payment before marking this order paid.");
+    if(next==="fulfilled"&&balance.net<order.total_cents) fail(409,"Record the full payment before fulfillment.");
+    if(next==="cancelled"&&balance.net>0) fail(409,"Refund recorded payments before cancelling this order.");
     if(next==="cancelled"&&order.status!=="cancelled"){
       const items=db.prepare("SELECT product_id,kind,quantity FROM store_order_items WHERE order_id=?").all(order.id) as Row[];
       for(const item of items) if(item.kind==="physical") db.prepare("UPDATE store_products SET stock_qty=stock_qty+?,updated_at=? WHERE id=?").run(item.quantity,now(),item.product_id);
@@ -295,15 +318,63 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
     res.json({ok:true});
   });
 
+  app.post("/api/admin/store/orders/:id/payments",finance,(req,res)=>{
+    cleanupExpired();
+    const order=required(
+      db.prepare("SELECT * FROM store_orders WHERE id=?").get(String(req.params.id)) as Row|undefined,
+      "Order not found."
+    );
+    if(order.status==="cancelled") fail(409,"Cancelled orders cannot receive payments.");
+    const requestKey=String(req.get("Idempotency-Key")||"");
+    if(!/^[a-f0-9-]{36}$/i.test(requestKey)) fail(400,"Missing payment request identifier.");
+    const existing=db.prepare("SELECT id FROM store_order_payments WHERE request_key=?").get(requestKey) as Row|undefined;
+    if(existing) return res.json({ok:true,replayed:true,...paymentBalance(order.id)});
+    const kind=req.body.kind==="refund"?"refund":req.body.kind==="payment"?"payment":"";
+    if(!kind) fail(400,"Choose payment or refund.");
+    const cents=Number(req.body.cents);
+    if(!Number.isInteger(cents)||cents<=0||cents>100_000_000) fail(400,"Enter a valid payment amount.");
+    const current=paymentBalance(order.id);
+    if(kind==="refund"&&cents>current.net) fail(409,"Refund cannot exceed the net amount paid.");
+    db.prepare("INSERT INTO store_order_payments(id,order_id,cents,kind,method,note,actor,created_at,request_key) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run(
+        randomUUID(),order.id,cents,kind,text(req.body.method??"manual","payment method",80,2),
+        text(req.body.note??"","payment note",500),res.locals.user.id,now(),requestKey
+      );
+    const next=paymentBalance(order.id);
+    if(kind==="payment"&&next.net>=order.total_cents&&["pending","confirmed"].includes(order.status))
+      db.prepare("UPDATE store_orders SET status='paid',payment_method=?,updated_at=? WHERE id=?")
+        .run(text(req.body.method??"manual","payment method",80,2),now(),order.id);
+    res.status(201).json({ok:true,...next});
+  });
+
+  app.get("/api/admin/store/orders/:id/payments",finance,(req,res)=>{
+    const order=required(
+      db.prepare("SELECT id FROM store_orders WHERE id=?").get(String(req.params.id)) as Row|undefined,
+      "Order not found."
+    );
+    res.json({
+      ...paymentBalance(order.id),
+      rows:db.prepare("SELECT id,cents,kind,method,note,actor,created_at AS createdAt FROM store_order_payments WHERE order_id=? ORDER BY created_at DESC").all(order.id)
+    });
+  });
+
   app.get("/api/admin/store/metrics",finance,(_req,res)=>{
     cleanupExpired();
-    const byCurrency=(db.prepare(`
-      SELECT currency,COALESCE(SUM(total_cents),0) AS revenue,COALESCE(SUM(total_cost_cents),0) AS cost,COUNT(*) AS orders
-      FROM store_orders WHERE status IN ('paid','fulfilled') GROUP BY currency ORDER BY currency
-    `).all() as Row[]).map(row=>({
-      currency:row.currency,revenueCents:Number(row.revenue),costCents:Number(row.cost),
-      grossMarginCents:Number(row.revenue)-Number(row.cost),orders:Number(row.orders)
-    }));
+    const currencies=db.prepare("SELECT DISTINCT currency FROM store_orders ORDER BY currency").all() as Row[];
+    const byCurrency=currencies.map(({currency})=>{
+      const orders=db.prepare("SELECT id,total_cost_cents,status FROM store_orders WHERE currency=?").all(currency) as Row[];
+      const netCash=orders.reduce((sum,order)=>sum+paymentBalance(order.id).net,0);
+      const recognizedCost=orders
+        .filter((order)=>["paid","fulfilled"].includes(order.status)&&paymentBalance(order.id).net>0)
+        .reduce((sum,order)=>sum+Number(order.total_cost_cents),0);
+      return {
+        currency,
+        revenueCents:netCash,
+        costCents:recognizedCost,
+        grossMarginCents:netCash-recognizedCost,
+        orders:orders.filter((order)=>paymentBalance(order.id).net>0).length
+      };
+    });
     const pending=(db.prepare("SELECT COUNT(*) AS n FROM store_orders WHERE status IN ('pending','confirmed')").get() as Row).n;
     const lowStock=db.prepare("SELECT id,name,stock_qty FROM store_products WHERE active=1 AND kind='physical' AND stock_qty<=5 ORDER BY stock_qty,name").all();
     res.json({byCurrency,pending,lowStock});
