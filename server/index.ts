@@ -17,6 +17,7 @@ const { app, db } = createApp({
   secureCookies: production || process.env.COOKIE_SECURE === "true",
   trustProxy: production ? 1 : 0,
   linkSecret: linkSecret || adminPassword,
+  platformSecret: process.env.V79_PLATFORM_SHARED_SECRET ?? "",
 });
 const port = Number(process.env.PORT ?? 3000);
 const server = app.listen(port, "0.0.0.0", () =>
