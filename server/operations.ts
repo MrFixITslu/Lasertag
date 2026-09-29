@@ -1,6 +1,8 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import QRCode from "qrcode";
+import nodemailer from "nodemailer";
 import { buildBalancedTeams } from "../src/lib/booking";
 import type { BookingDraft, BookingSummary } from "../src/types";
 
@@ -107,9 +109,47 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       resolved INTEGER NOT NULL DEFAULT 0,
       resolved_at TEXT NOT NULL DEFAULT ''
     );
+    CREATE TABLE IF NOT EXISTS participant_invites(
+      booking_id TEXT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
+      token_hash TEXT UNIQUE NOT NULL,
+      token_value TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS event_feedback(
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL,
+      comment TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS event_media(
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      media_id TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY(booking_id,media_id)
+    );
+    CREATE TABLE IF NOT EXISTS communications(
+      booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      status TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY(booking_id,type)
+    );
   `);
-  if (!(db.prepare("PRAGMA table_info(participants)").all() as Row[]).some((column) => column.name === "equipment_code")) {
+  const participantColumns = db.prepare("PRAGMA table_info(participants)").all() as Row[];
+  if (!participantColumns.some((column) => column.name === "equipment_code")) {
     db.exec("ALTER TABLE participants ADD COLUMN equipment_code TEXT NOT NULL DEFAULT ''");
+  }
+  if (!participantColumns.some((column) => column.name === "checkin_hash")) {
+    db.exec("ALTER TABLE participants ADD COLUMN checkin_hash TEXT NOT NULL DEFAULT ''");
+  }
+  if (!participantColumns.some((column) => column.name === "checkin_value")) {
+    db.exec("ALTER TABLE participants ADD COLUMN checkin_value TEXT NOT NULL DEFAULT ''");
+  }
+  const portalColumns = db.prepare("PRAGMA table_info(booking_portals)").all() as Row[];
+  if (!portalColumns.some((column) => column.name === "token_value")) {
+    db.exec("ALTER TABLE booking_portals ADD COLUMN token_value TEXT NOT NULL DEFAULT ''");
   }
   const equipmentStamp = now();
   for (let number = 1; number <= 12; number += 1) {
