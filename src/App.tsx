@@ -99,12 +99,20 @@ function getMission(id: string) {
 
 const Admin = lazy(() => import('./Admin'));
 const RegistrationPortal = lazy(() => import('./RegistrationPortal'));
+const ParticipantJoin = lazy(() => import('./ParticipantJoin'));
+const ParticipantCheckin = lazy(() => import('./ParticipantCheckin'));
 function App() {
   if (/^\/admin\/?$/.test(window.location.pathname)) {
     return <Suspense fallback={<p role="status">Loading booking control…</p>}><Admin /></Suspense>;
   }
   if (/^\/manage\/[a-f0-9]{64}\/?$/i.test(window.location.pathname)) {
     return <Suspense fallback={<p role="status">Loading registration portal…</p>}><RegistrationPortal /></Suspense>;
+  }
+  if (/^\/join\/[a-f0-9]{64}\/?$/i.test(window.location.pathname)) {
+    return <Suspense fallback={<p role="status">Loading participant registration…</p>}><ParticipantJoin /></Suspense>;
+  }
+  if (/^\/checkin\/[a-f0-9]{48}\/?$/i.test(window.location.pathname)) {
+    return <Suspense fallback={<p role="status">Loading check-in pass…</p>}><ParticipantCheckin /></Suspense>;
   }
   return <PublicApp />;
 }
