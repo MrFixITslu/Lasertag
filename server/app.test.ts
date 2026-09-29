@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import nodemailer from "nodemailer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
+import { decryptMfaSecret, totpCode } from "./mfa";
 import { buildDateChoices } from "../src/lib/booking";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 
 const password = "test-only-password-long-enough";
+const linkSecret = "test-only-separate-link-secret-1234567890";
 const origin = "http://localhost:5173";
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -23,6 +25,7 @@ async function start(path = ":memory:", secureCookies = false) {
     staticPath: "public",
     publicOrigin: secureCookies ? "https://combatzone.example" : origin,
     secureCookies,
+    linkSecret,
   });
   const server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
@@ -55,16 +58,43 @@ async function start(path = ":memory:", secureCookies = false) {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  const login = async () => {
-    const response = await request("/api/admin/login", "POST", {
-      username: "admin",
-      password,
+  const loginAs = async (username: string, passwordValue: string) => {
+    const first = await request("/api/admin/login", "POST", {
+      username,
+      password: passwordValue,
+    });
+    expect(first.status).toBe(202);
+    const challenge = await first.json();
+    let secret = challenge.secret as string | undefined;
+    if (!secret) {
+      const userId =
+        username === "admin"
+          ? "owner"
+          : (
+              db.prepare("SELECT id FROM users WHERE email=?")
+                .get(username.trim().toLowerCase()) as { id: string } | undefined
+            )?.id;
+      expect(userId).toBeTruthy();
+      const record = db.prepare("SELECT secret_value FROM admin_mfa WHERE user_id=?")
+        .get(userId!) as { secret_value: string } | undefined;
+      expect(record).toBeTruthy();
+      secret = decryptMfaSecret(record!.secret_value, linkSecret);
+    }
+    const response = await request("/api/admin/mfa/verify", "POST", {
+      challengeToken: challenge.challengeToken,
+      code: totpCode(secret!),
     });
     expect(response.status).toBe(200);
+    const body = await response.json();
     const cookie = response.headers.get("set-cookie")!.split(";")[0];
-    return { Cookie: cookie, "X-CSRF-Token": (await response.json()).csrf };
+    return {
+      auth: { Cookie: cookie, "X-CSRF-Token": body.csrf },
+      body,
+      response,
+    };
   };
-  return { request, login, close, base, db };
+  const login = async () => (await loginAs("admin", password)).auth;
+  return { request, login, loginAs, close, base, db };
 }
 function draft(overrides: Record<string, unknown> = {}) {
   return {
@@ -170,15 +200,71 @@ describe("Booking API security and workflows", () => {
         .status,
     ).toBe(401);
   });
-  it("uses secure, HttpOnly, SameSite cookies and throttles failed login attempts", async () => {
-    const service = await start(":memory:", true);
-    const login = await service.request("/api/admin/login", "POST", {
+  it("requires TOTP after password, supports enrollment and one-time recovery codes", async () => {
+    const service = await start();
+    const first = await service.request("/api/admin/login", "POST", {
       username: "admin",
       password,
     });
-    expect(login.headers.get("set-cookie")).toContain("Secure");
-    expect(login.headers.get("set-cookie")).toContain("HttpOnly");
-    expect(login.headers.get("set-cookie")).toContain("SameSite=Strict");
+    expect(first.status).toBe(202);
+    expect(first.headers.get("set-cookie")).toBeNull();
+    const setup = await first.json();
+    expect(setup.twoFactorRequired).toBe(true);
+    expect(setup.setupRequired).toBe(true);
+    expect(setup.secret).toMatch(/^[A-Z2-7]+$/);
+    expect(setup.qrCode).toMatch(/^data:image\/png;base64,/);
+
+    const wrong = await service.request("/api/admin/mfa/verify", "POST", {
+      challengeToken: setup.challengeToken,
+      code: "000000",
+    });
+    expect(wrong.status).toBe(401);
+
+    const verified = await service.request("/api/admin/mfa/verify", "POST", {
+      challengeToken: setup.challengeToken,
+      code: totpCode(setup.secret),
+    });
+    expect(verified.status).toBe(200);
+    const enrollment = await verified.json();
+    expect(enrollment.recoveryCodes).toHaveLength(10);
+    expect(verified.headers.get("set-cookie")).toContain("HttpOnly");
+
+    const second = await service.request("/api/admin/login", "POST", {
+      username: "admin",
+      password,
+    });
+    expect(second.status).toBe(202);
+    const challenge = await second.json();
+    expect(challenge.setupRequired).toBe(false);
+    expect(challenge.secret).toBeUndefined();
+    expect(challenge.qrCode).toBeUndefined();
+
+    const recovery = enrollment.recoveryCodes[0];
+    const recovered = await service.request("/api/admin/mfa/verify", "POST", {
+      challengeToken: challenge.challengeToken,
+      code: recovery,
+    });
+    expect(recovered.status).toBe(200);
+    expect((await recovered.json()).recoveryCodeUsed).toBe(true);
+
+    const third = await service.request("/api/admin/login", "POST", {
+      username: "admin",
+      password,
+    });
+    const thirdChallenge = await third.json();
+    const reused = await service.request("/api/admin/mfa/verify", "POST", {
+      challengeToken: thirdChallenge.challengeToken,
+      code: recovery,
+    });
+    expect(reused.status).toBe(401);
+  });
+
+  it("uses secure, HttpOnly, SameSite cookies and throttles failed login attempts", async () => {
+    const service = await start(":memory:", true);
+    const completed = await service.loginAs("admin", password);
+    expect(completed.response.headers.get("set-cookie")).toContain("Secure");
+    expect(completed.response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(completed.response.headers.get("set-cookie")).toContain("SameSite=Strict");
     for (let i = 0; i < 4; i++)
       expect(
         (
@@ -587,21 +673,8 @@ describe("business permissions and income", () => {
     );
     expect(created.status).toBe(201);
     const user = await created.json();
-    const loginStaff = async () => {
-      const r = await service.request("/api/admin/login", "POST", {
-        username: "crew@example.com",
-        password,
-      });
-      expect(r.status).toBe(200);
-      const body = await r.json();
-      return {
-        auth: {
-          Cookie: r.headers.get("set-cookie")!.split(";")[0],
-          "X-CSRF-Token": body.csrf,
-        },
-        body,
-      };
-    };
+    const loginStaff = async () =>
+      service.loginAs("crew@example.com", password);
     let staff = await loginStaff();
     expect(staff.body.finance).toBe(false);
     for (const endpoint of [
@@ -1071,15 +1144,8 @@ describe("KPI measurement and media workflows", () => {
       },
       auth,
     );
-    const login = await service.request("/api/admin/login", "POST", {
-        username: "kpi@example.com",
-        password,
-      }),
-      session = await login.json();
-    const staff = {
-      Cookie: login.headers.get("set-cookie")!.split(";")[0],
-      "X-CSRF-Token": session.csrf,
-    };
+    const staffLogin = await service.loginAs("kpi@example.com", password);
+    const staff = staffLogin.auth;
     const privateData = await (
       await service.request("/api/admin/kpis", "GET", undefined, staff)
     ).json();
