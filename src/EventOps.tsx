@@ -304,7 +304,7 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
                 <td><select value={person.teamIndex} disabled={busy}
                   onChange={(event)=>patchParticipant(person,{teamIndex:Number(event.target.value)})}>
                   <option value={-1}>Unassigned</option>
-                  {Array.from({length:Math.max(2,data.rosterTeamSizes.length)},(_,index)=>
+                  {Array.from({length:Math.max(2,data.rosterTeamSizes.length,data.recommendedTeamSizes.length)},(_,index)=>
                     <option value={index} key={index}>{teamName(index)}</option>)}
                 </select></td>
                 <td><input aria-label={`Waiver for ${person.name}`} type="checkbox" checked={person.waiverSigned} disabled={busy}
