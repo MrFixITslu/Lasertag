@@ -13,6 +13,7 @@ import {
 import Brand from "./Brand";
 import Kpis from "./Kpis";
 import { BusinessConsole, type AdminSession } from "./BusinessConsole";
+import EventOps from "./EventOps";
 import { api, ApiError } from "./lib/api";
 import {
   buildDateChoices,
@@ -661,7 +662,7 @@ export default function Admin() {
                             <dt>Players</dt>
                             <dd>
                               {detail.draft.players} ·{" "}
-                              {detail.summary.squadCount} squads
+                              {detail.summary.teamCount ?? detail.summary.squadCount} teams
                             </dd>
                           </div>
                           <div>
@@ -720,6 +721,7 @@ export default function Admin() {
                             <p>{detail.draft.notes}</p>
                           </div>
                         )}
+                        <EventOps bookingId={detail.id} session={session} />
                         <form onSubmit={save} className="admin-edit">
                           <h3>MANAGE REQUEST</h3>
                           <div className="admin-edit-grid">
