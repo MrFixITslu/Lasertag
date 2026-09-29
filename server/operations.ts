@@ -503,19 +503,6 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       const profile = db.prepare("SELECT roster_locked FROM event_profiles WHERE booking_id=?").get(bookingId) as Row | undefined;
       if (profile?.roster_locked) fail(409, "Teams are locked. Contact CombatZone to make roster changes.");
     };
-    const invite = (req: Request, _res: Response, next: NextFunction) => {
-      const booking = inviteBooking(String(req.params.token ?? ""));
-      if (!booking) return next(Object.assign(new Error("Participant registration link is invalid or expired."), { status: 404 }));
-      (req as any).inviteBooking = booking;
-      next();
-    };
-    const checkin = (req: Request, _res: Response, next: NextFunction) => {
-      const participant = checkinParticipant(String(req.params.token ?? ""));
-      if (!participant) return next(Object.assign(new Error("Check-in link is invalid or expired."), { status: 404 }));
-      (req as any).checkinParticipant = participant;
-      next();
-    };
-
     app.get("/api/portal/:token", portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       res.json(eventData(booking.id));
@@ -990,6 +977,8 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
   return {
     createBookingPortal,
     rotatePortalToken: newPortalToken,
+    notifyBookingCreated: (bookingId: string, portalToken: string) =>
+      sendEventMessage(bookingId, "confirmation", portalToken),
     installRoutes,
     eventData,
     publicOrigin,
