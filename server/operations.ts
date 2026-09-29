@@ -364,7 +364,18 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       FROM participants WHERE booking_id=? ORDER BY active DESC,team_index,created_at,id
     `).all(bookingId) as Row[];
     const active = participants.filter((item) => item.active);
-    const sizes = balancedRosterSizes(active.length);
+    const recommendedTeamSizes = balancedRosterSizes(active.length);
+    const assigned = active.filter((item) => Number(item.teamIndex) >= 0);
+    const unassignedPlayers = active.length - assigned.length;
+    const highestTeam = assigned.reduce((max,item)=>Math.max(max,Number(item.teamIndex)),-1);
+    const actualTeamSizes = highestTeam >= 0
+      ? Array.from({length:highestTeam+1},(_,index)=>assigned.filter((item)=>Number(item.teamIndex)===index).length)
+      : [];
+    const nonEmptyActual = actualTeamSizes.filter((size)=>size>0);
+    const teamBalanceWarning =
+      unassignedPlayers > 0 ||
+      (nonEmptyActual.length > 1 && Math.max(...nonEmptyActual)-Math.min(...nonEmptyActual)>1);
+    const sizes = actualTeamSizes.length ? actualTeamSizes : recommendedTeamSizes;
     const invite = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
     const portalRecord = includePrivate
       ? db.prepare("SELECT token_value FROM booking_portals WHERE booking_id=?").get(bookingId) as Row | undefined
@@ -408,6 +419,9 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       })),
       registeredPlayers: active.length,
       rosterTeamSizes: sizes,
+      recommendedTeamSizes,
+      unassignedPlayers,
+      teamBalanceWarning,
       joinUrl: invite?.token_value ? (()=>{const token=openSecret(invite.token_value);return token?`${publicOrigin}/join/${token}`:"";})() : "",
       registrationUrl: portalRecord?.token_value ? (()=>{const token=openSecret(portalRecord.token_value);return token?`${publicOrigin}/manage/${token}`:"";})() : "",
       rounds: roundData(bookingId),
