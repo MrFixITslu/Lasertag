@@ -223,10 +223,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       if (round.team_a < 0 || round.team_b < 0) continue;
       const a=ensure(round.team_a), b=ensure(round.team_b);
       a.played++; b.played++;
-      a.scored += round.score_a; a.conceded += round.score_b; a.objectives += round.objective_a;
-      b.scored += round.score_b; b.conceded += round.score_a; b.objectives += round.objective_b;
-      if (round.score_a > round.score_b) { a.wins++; b.losses++; a.points += 3; }
-      else if (round.score_b > round.score_a) { b.wins++; a.losses++; b.points += 3; }
+      a.scored += current.score_a; a.conceded += current.score_b; a.objectives += current.objective_a;
+      b.scored += current.score_b; b.conceded += current.score_a; b.objectives += current.objective_b;
+      if (current.score_a > current.score_b) { a.wins++; b.losses++; a.points += 3; }
+      else if (current.score_b > current.score_a) { b.wins++; a.losses++; b.points += 3; }
       else { a.draws++; b.draws++; a.points++; b.points++; }
     }
     return [...table.values()].sort((a,b) =>
@@ -518,6 +518,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       getBooking(bookingId);
       const round=db.prepare("SELECT * FROM event_rounds WHERE id=? AND booking_id=?").get(roundId,bookingId) as Row | undefined;
       if(!round) fail(404,"Round not found.");
+      const current = round as Row;
       const action=typeof req.body.action==="string" ? req.body.action : "score";
       const stamp=now();
       if(action==="start"){
@@ -525,32 +526,32 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
           .run(stamp,bookingId,roundId);
         db.prepare("UPDATE event_rounds SET status='live',started_at=?,ended_at='' WHERE id=?").run(stamp,roundId);
         db.prepare("UPDATE event_profiles SET event_status='live',updated_at=? WHERE booking_id=?").run(stamp,bookingId);
-      } else if(action==="pause" && round.status==="live"){
-        const extra=round.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(round.started_at))/1000)) : 0;
-        db.prepare("UPDATE event_rounds SET status='paused',elapsed_seconds=?,started_at='' WHERE id=?").run(round.elapsed_seconds+extra,roundId);
-      } else if(action==="resume" && round.status==="paused"){
+      } else if(action==="pause" && current.status==="live"){
+        const extra=current.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(current.started_at))/1000)) : 0;
+        db.prepare("UPDATE event_rounds SET status='paused',elapsed_seconds=?,started_at='' WHERE id=?").run(current.elapsed_seconds+extra,roundId);
+      } else if(action==="resume" && current.status==="paused"){
         db.prepare("UPDATE event_rounds SET status='live',started_at=? WHERE id=?").run(stamp,roundId);
       } else if(action==="complete"){
-        const extra=round.status==="live" && round.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(round.started_at))/1000)) : 0;
+        const extra=current.status==="live" && current.started_at ? Math.max(0,Math.floor((Date.now()-Date.parse(current.started_at))/1000)) : 0;
         db.prepare("UPDATE event_rounds SET status='completed',elapsed_seconds=?,started_at='',ended_at=?,score_a=?,score_b=?,objective_a=?,objective_b=?,notes=? WHERE id=?")
           .run(
-            round.elapsed_seconds+extra,stamp,
-            Math.max(0,Math.floor(Number(req.body.scoreA ?? round.score_a))),
-            Math.max(0,Math.floor(Number(req.body.scoreB ?? round.score_b))),
-            Math.max(0,Math.floor(Number(req.body.objectiveA ?? round.objective_a))),
-            Math.max(0,Math.floor(Number(req.body.objectiveB ?? round.objective_b))),
-            text(req.body.notes ?? round.notes,"round notes",500),roundId
+            current.elapsed_seconds+extra,stamp,
+            Math.max(0,Math.floor(Number(req.body.scoreA ?? current.score_a))),
+            Math.max(0,Math.floor(Number(req.body.scoreB ?? current.score_b))),
+            Math.max(0,Math.floor(Number(req.body.objectiveA ?? current.objective_a))),
+            Math.max(0,Math.floor(Number(req.body.objectiveB ?? current.objective_b))),
+            text(req.body.notes ?? current.notes,"round notes",500),roundId
           );
       } else if(action==="reset"){
         db.prepare("UPDATE event_rounds SET status='pending',started_at='',elapsed_seconds=0,ended_at='',score_a=0,score_b=0,objective_a=0,objective_b=0,notes='' WHERE id=?").run(roundId);
       } else {
         db.prepare("UPDATE event_rounds SET score_a=?,score_b=?,objective_a=?,objective_b=?,notes=? WHERE id=?")
           .run(
-            Math.max(0,Math.floor(Number(req.body.scoreA ?? round.score_a))),
-            Math.max(0,Math.floor(Number(req.body.scoreB ?? round.score_b))),
-            Math.max(0,Math.floor(Number(req.body.objectiveA ?? round.objective_a))),
-            Math.max(0,Math.floor(Number(req.body.objectiveB ?? round.objective_b))),
-            text(req.body.notes ?? round.notes,"round notes",500),roundId
+            Math.max(0,Math.floor(Number(req.body.scoreA ?? current.score_a))),
+            Math.max(0,Math.floor(Number(req.body.scoreB ?? current.score_b))),
+            Math.max(0,Math.floor(Number(req.body.objectiveA ?? current.objective_a))),
+            Math.max(0,Math.floor(Number(req.body.objectiveB ?? current.objective_b))),
+            text(req.body.notes ?? current.notes,"round notes",500),roundId
           );
       }
       res.json(eventData(bookingId,true));
