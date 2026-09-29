@@ -197,7 +197,8 @@ describe("Booking API security and workflows", () => {
     expect(first.status).toBe(201);
     const receipt = await first.json();
     expect(receipt.status).toBe("pending");
-    expect(Object.keys(receipt).sort()).toEqual(["reference", "status"]);
+    expect(receipt.portalToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(Object.keys(receipt).sort()).toEqual(["portalToken", "reference", "status"]);
     const repeated = await service.request(
       "/api/bookings",
       "POST",
@@ -250,6 +251,71 @@ describe("Booking API security and workflows", () => {
     ).json();
     expect(persisted.total).toBe(1);
     expect(persisted.bookings[0].reference).toBe(receipt.reference);
+  });
+  it("creates a secure registration portal with roster and balanced teams", async () => {
+    const service = await start();
+    const response = await service.request("/api/bookings", "POST", draft({
+      missionId: "corporate-team-battle",
+      players: 15,
+      venueType: "event",
+      eventDetails: {
+        eventName: "Finance Team Challenge",
+        organization: "Test Company",
+        groupType: "corporate",
+        ageGroup: "adults",
+        emergencyContactName: "Event Lead",
+        emergencyContactPhone: "+17585550000",
+        objectives: "Team building",
+        accessibilityNotes: "",
+        photoConsent: false,
+        participantNames: ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+      },
+    }), key());
+    expect(response.status).toBe(201);
+    const receipt = await response.json();
+    const portal = await service.request(`/api/portal/${receipt.portalToken}`);
+    expect(portal.status).toBe(200);
+    const data = await portal.json();
+    expect(data.profile.eventName).toBe("Finance Team Challenge");
+    expect(data.registeredPlayers).toBe(15);
+    expect(data.rosterTeamSizes).toEqual([5, 5, 5]);
+    expect(new Set(data.participants.map((p: any) => p.teamIndex))).toEqual(new Set([0,1,2]));
+
+    const added = await service.request(
+      `/api/portal/${receipt.portalToken}/participants`,
+      "POST",
+      { name: "Late Player", waiverSigned: true },
+    );
+    expect(added.status).toBe(201);
+    const after = await added.json();
+    expect(after.registeredPlayers).toBe(16);
+    expect(after.rosterTeamSizes).toEqual([6, 5, 5]);
+
+    const auth = await service.login();
+    const randomized = await service.request(
+      `/api/admin/events/${data.bookingId}/rebalance`,
+      "POST",
+      { randomize: true },
+      auth,
+    );
+    expect(randomized.status).toBe(200);
+    const locked = await service.request(
+      `/api/admin/events/${data.bookingId}/lock`,
+      "POST",
+      { locked: true },
+      auth,
+    );
+    expect(locked.status).toBe(200);
+    expect((await locked.json()).profile.rosterLocked).toBe(true);
+    expect(
+      (
+        await service.request(
+          `/api/portal/${receipt.portalToken}/participants`,
+          "POST",
+          { name: "Blocked Player" },
+        )
+      ).status,
+    ).toBe(409);
   });
   it("persists balanced corporate teams and their match rotation", async () => {
     const service = await start();
