@@ -199,6 +199,11 @@ export interface ServerConfig {
 export function createApp(config: ServerConfig) {
   if (config.adminPassword.length < 16 || config.adminPassword.length > 256)
     throw new Error("ADMIN_PASSWORD must contain 16–256 characters.");
+  if (
+    config.linkSecret !== undefined &&
+    (config.linkSecret.length < 32 || config.linkSecret === config.adminPassword)
+  )
+    throw new Error("LINK_SECRET must be at least 32 characters and different from ADMIN_PASSWORD.");
   if (!config.adminUsername || config.adminUsername.length > 80)
     throw new Error("ADMIN_USERNAME is required (maximum 80 characters).");
   const origin = new URL(config.publicOrigin).origin;
