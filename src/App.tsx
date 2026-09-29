@@ -41,11 +41,11 @@ import {
 } from './lib/booking';
 import type { BookingDraft, MissionPackage } from './types';
 
-type BookingStage = 'mission' | 'squad' | 'deployment' | 'account' | 'review';
+type BookingStage = 'mission' | 'squad' | 'deployment' | 'details' | 'account' | 'review';
 type MissionFilter = 'instant' | 'request';
 
-const stageOrder: BookingStage[] = ['mission', 'squad', 'deployment', 'account', 'review'];
-const stageLabels = ['Mission', 'Teams', 'Deployment', 'Operator', 'Confirm'];
+const stageOrder: BookingStage[] = ['mission', 'squad', 'deployment', 'details', 'account', 'review'];
+const stageLabels = ['Mission', 'Teams', 'Deployment', 'Registration', 'Operator', 'Confirm'];
 
 const venueTypes = [
   { id: 'home', label: 'Home / Private Property', icon: MapPin },
@@ -66,6 +66,18 @@ const initialDraft: BookingDraft = {
   address: '',
   weatherFlexible: false,
   notes: '',
+  eventDetails: {
+    eventName: '',
+    organization: '',
+    groupType: 'other',
+    ageGroup: 'mixed',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    objectives: '',
+    accessibilityNotes: '',
+    photoConsent: false,
+    participantNames: []
+  },
   customer: {
     fullName: '',
     email: '',
@@ -86,10 +98,15 @@ function getMission(id: string) {
 }
 
 const Admin = lazy(() => import('./Admin'));
+const RegistrationPortal = lazy(() => import('./RegistrationPortal'));
 function App() {
-  return /^\/admin\/?$/.test(window.location.pathname)
-    ? <Suspense fallback={<p role="status">Loading booking control…</p>}><Admin /></Suspense>
-    : <PublicApp />;
+  if (/^\/admin\/?$/.test(window.location.pathname)) {
+    return <Suspense fallback={<p role="status">Loading booking control…</p>}><Admin /></Suspense>;
+  }
+  if (/^\/manage\/[a-f0-9]{64}\/?$/i.test(window.location.pathname)) {
+    return <Suspense fallback={<p role="status">Loading registration portal…</p>}><RegistrationPortal /></Suspense>;
+  }
+  return <PublicApp />;
 }
 
 function PublicApp() {
@@ -117,7 +134,7 @@ function BookingApp() {
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
   const request = useRef<{ body: string; key: string } | null>(null);
-  const [receipt, setReceipt] = useState('');
+  const [receipt, setReceipt] = useState<{ reference: string; portalToken: string } | null>(null);
   const [submitError, setSubmitError] = useState('');
 
   const selectedMission = getMission(draft.missionId);
@@ -139,7 +156,13 @@ function BookingApp() {
     setDraft((current) => ({
       ...current,
       missionId: mission.id,
-      players: Math.max(current.players, mission.minPlayers)
+      players: Math.max(current.players, mission.minPlayers),
+      eventDetails: {
+        ...current.eventDetails,
+        groupType: ['birthday','corporate','school','community','resort'].includes(mission.category)
+          ? mission.category as BookingDraft['eventDetails']['groupType']
+          : current.eventDetails.groupType
+      }
     }));
     setStage('squad');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -169,18 +192,21 @@ function BookingApp() {
     Boolean(draft.area.trim()) &&
     Boolean(draft.address.trim());
 
+  const registrationComplete =
+    Boolean(draft.eventDetails.emergencyContactName.trim()) &&
+    draft.eventDetails.emergencyContactPhone.replace(/\D/g, '').length >= 7;
   const accountComplete = validCustomer(draft.customer);
 
   const finalizeMission = async () => {
-    if (inFlight.current || !selectedMission || !deploymentComplete || !accountComplete) return;
+    if (inFlight.current || !selectedMission || !deploymentComplete || !registrationComplete || !accountComplete) return;
     const body = JSON.stringify({...draft,visitId:visitId(),campaignId:campaignId()});
     if (!request.current || request.current.body !== body) request.current = { body, key: crypto.randomUUID() };
     inFlight.current = true; setSubmitting(true); setSubmitError('');
     try {
-      const result = await api<{ reference: string }>('/api/bookings', {
+      const result = await api<{ reference: string; portalToken: string }>('/api/bookings', {
         method: 'POST', headers: { 'Idempotency-Key': request.current.key }, body
       });
-      setReceipt(result.reference);
+      setReceipt({ reference: result.reference, portalToken: result.portalToken });
       window.scrollTo({ top: 0, behavior: 'instant' });
     } catch (error) { setSubmitError(error instanceof Error ? error.message : 'Could not send your request. Please try again.'); }
     finally { inFlight.current = false; setSubmitting(false); }
@@ -190,9 +216,10 @@ function BookingApp() {
     <div className="app-shell"><header className="topbar"><Brand /></header>
       <main className="page-frame"><section className="hud-panel account-form narrow-panel" role="status">
         <BadgeCheck size={40} /><p className="eyebrow">REQUEST RECEIVED / PENDING REVIEW</p>
-        <h1>YOUR MISSION IS IN.</h1><p>Your reference: <strong>{receipt}</strong></p>
-        <p>Your request has been saved for our team to review. Your slot is not yet confirmed and no payment has been taken. Keep this reference; our team will contact you using the details you supplied.</p>
-        <a className="primary-action" href="/">BACK TO COMBATZONE</a>
+        <h1>YOUR MISSION IS IN.</h1><p>Your reference: <strong>{receipt.reference}</strong></p>
+        <p>Your request has been saved for our team to review. Your slot is not yet confirmed and no payment has been taken. Use your private registration link to finish the roster, participant details and event preparation before game day.</p>
+        <a className="primary-action" href={`/manage/${receipt.portalToken}`}>COMPLETE REGISTRATION</a>
+        <a className="secondary-action" href="/">BACK TO COMBATZONE</a>
       </section></main></div>
   );
 
@@ -263,6 +290,16 @@ function BookingApp() {
             onBack={goBack}
             onNext={goForward}
             canContinue={deploymentComplete}
+          />
+        )}
+
+        {stage === 'details' && selectedMission && (
+          <EventDetailsStep
+            draft={draft}
+            setDraft={setDraft}
+            onBack={goBack}
+            onNext={goForward}
+            canContinue={registrationComplete}
           />
         )}
 
@@ -775,6 +812,115 @@ function DeploymentStep({
   );
 }
 
+function EventDetailsStep({
+  draft,
+  setDraft,
+  onBack,
+  onNext,
+  canContinue
+}: {
+  draft: BookingDraft;
+  setDraft: React.Dispatch<React.SetStateAction<BookingDraft>>;
+  onBack: () => void;
+  onNext: () => void;
+  canContinue: boolean;
+}) {
+  const update = <K extends keyof BookingDraft['eventDetails']>(
+    key: K,
+    value: BookingDraft['eventDetails'][K]
+  ) => setDraft((current) => ({
+    ...current,
+    eventDetails: { ...current.eventDetails, [key]: value }
+  }));
+
+  return (
+    <section className="panel-stack narrow-panel">
+      <StageHeading
+        number="04"
+        eyebrow="PRE-MISSION REGISTRATION"
+        title="TELL US ABOUT THE GROUP."
+        text="Capture the information we need to prepare the event. Participant names can be added now or completed later using the private registration link."
+      />
+      <div className="hud-panel account-form">
+        <label>
+          <span>Event / Group Name</span>
+          <input maxLength={120} value={draft.eventDetails.eventName}
+            onChange={(event) => update('eventName', event.target.value)}
+            placeholder="e.g. Finance Team Challenge or Maya's Birthday" />
+        </label>
+        <label>
+          <span>Company / School / Organization</span>
+          <input maxLength={120} value={draft.eventDetails.organization}
+            onChange={(event) => update('organization', event.target.value)}
+            placeholder="Optional" />
+        </label>
+        <label>
+          <span>Group Type</span>
+          <select value={draft.eventDetails.groupType}
+            onChange={(event) => update('groupType', event.target.value as BookingDraft['eventDetails']['groupType'])}>
+            <option value="birthday">Birthday / private party</option>
+            <option value="corporate">Corporate / team building</option>
+            <option value="school">School / youth group</option>
+            <option value="community">Community / festival</option>
+            <option value="resort">Hotel / resort</option>
+            <option value="friends">Friends / social group</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>
+          <span>Age Group</span>
+          <select value={draft.eventDetails.ageGroup}
+            onChange={(event) => update('ageGroup', event.target.value as BookingDraft['eventDetails']['ageGroup'])}>
+            <option value="children">Children</option>
+            <option value="teens">Teens</option>
+            <option value="adults">Adults</option>
+            <option value="mixed">Mixed ages</option>
+          </select>
+        </label>
+        <label>
+          <span>Emergency Contact Name</span>
+          <input required maxLength={120} value={draft.eventDetails.emergencyContactName}
+            onChange={(event) => update('emergencyContactName', event.target.value)}
+            placeholder="Person available during the event" />
+        </label>
+        <label>
+          <span>Emergency Contact Phone</span>
+          <input required type="tel" maxLength={30} value={draft.eventDetails.emergencyContactPhone}
+            onChange={(event) => update('emergencyContactPhone', event.target.value)}
+            placeholder="+1 758 ..." />
+        </label>
+        <label>
+          <span>Event Goals / Preferences</span>
+          <textarea rows={3} maxLength={1000} value={draft.eventDetails.objectives}
+            onChange={(event) => update('objectives', event.target.value)}
+            placeholder="Team building goals, birthday preferences, competitive level, special requests…" />
+        </label>
+        <label>
+          <span>Accessibility / Setup Notes</span>
+          <textarea rows={3} maxLength={1000} value={draft.eventDetails.accessibilityNotes}
+            onChange={(event) => update('accessibilityNotes', event.target.value)}
+            placeholder="Mobility considerations, venue access, sensory considerations, or other useful preparation notes." />
+        </label>
+        <label>
+          <span>Participant Names — Optional, one per line</span>
+          <textarea rows={6} value={draft.eventDetails.participantNames.join('\n')}
+            onChange={(event) => update('participantNames',
+              event.target.value.split('\n').map((name) => name.trim()).filter(Boolean).slice(0, draft.players))}
+            placeholder="Add names now to pre-build the roster. You can finish this later from the registration portal." />
+          <small>{draft.eventDetails.participantNames.length} of {draft.players} expected players pre-registered</small>
+        </label>
+        <label className="tactical-checkbox inline-check">
+          <input type="checkbox" checked={draft.eventDetails.photoConsent}
+            onChange={(event) => update('photoConsent', event.target.checked)} />
+          <span className="checkbox-box"><Check size={14} /></span>
+          <span>Organizer is open to event photography/media. Final participant consent is still handled individually where required.</span>
+        </label>
+      </div>
+      <NavActions onBack={onBack} onNext={onNext} nextLabel="OPERATOR DETAILS" disabled={!canContinue} />
+    </section>
+  );
+}
+
 function AccountStep({
   draft,
   setDraft,
@@ -801,7 +947,7 @@ function AccountStep({
   return (
     <section className="panel-stack narrow-panel">
       <StageHeading
-        number="04"
+        number="05"
         eyebrow="OPERATOR PROFILE"
         title="YOUR CONTACT DETAILS."
         text="Enter the contact details our team should use to arrange your booking. No customer account is created."
@@ -901,7 +1047,7 @@ function ReviewStep({
   return (
     <section className="panel-stack">
       <StageHeading
-        number="05"
+        number="06"
         eyebrow="MISSION BRIEF"
         title="CONFIRM THE OPERATION."
         text={
@@ -936,6 +1082,11 @@ function ReviewStep({
           <BriefRow label="Scheduling buffer" value={`${formatDuration(summary.operationalBufferMinutes)} // setup & turnaround, not play time`} />
           <BriefRow label="Deployment" value={`${venueLabel} // ${draft.area}`} />
           <BriefRow label="Weather" value={draft.weatherFlexible ? 'Light-rain flexible' : 'Dry-weather preference'} />
+          <BriefRow label="Event" value={draft.eventDetails.eventName || mission.name} />
+          {draft.eventDetails.organization && <BriefRow label="Organization" value={draft.eventDetails.organization} />}
+          <BriefRow label="Age group" value={draft.eventDetails.ageGroup} />
+          <BriefRow label="Pre-registered" value={`${draft.eventDetails.participantNames.length} / ${draft.players} players`} />
+          <BriefRow label="Emergency contact" value={`${draft.eventDetails.emergencyContactName} // ${draft.eventDetails.emergencyContactPhone}`} />
           <BriefRow label="Operator" value={draft.customer.fullName} />
           {!summary.customQuoteRequired && summary.additionalPlayerPrice > 0 && (
             <BriefRow label="Additional players" value={money(summary.additionalPlayerPrice, summary.currency)} />
