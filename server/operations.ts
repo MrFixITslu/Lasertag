@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import nodemailer from "nodemailer";
 import { buildBalancedTeams } from "../src/lib/booking";
@@ -34,7 +34,25 @@ function shuffle<T>(items: T[]) {
   return copy;
 }
 
-export function initOperations(db: DatabaseSync, publicOrigin: string) {
+export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecret: string) {
+  const tokenKey = createHash("sha256").update(linkSecret).digest();
+  const sealSecret = (value:string) => {
+    const iv=randomBytes(12);
+    const cipher=createCipheriv("aes-256-gcm",tokenKey,iv);
+    const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);
+    return "v1:"+iv.toString("base64url")+":"+cipher.getAuthTag().toString("base64url")+":"+encrypted.toString("base64url");
+  };
+  const openSecret = (value:unknown) => {
+    if(typeof value!=="string"||!value) return "";
+    if(/^[a-f0-9]{48,64}$/i.test(value)) return value;
+    const parts=value.split(":");
+    if(parts.length!==4||parts[0]!=="v1") return "";
+    try{
+      const decipher=createDecipheriv("aes-256-gcm",tokenKey,Buffer.from(parts[1],"base64url"));
+      decipher.setAuthTag(Buffer.from(parts[2],"base64url"));
+      return Buffer.concat([decipher.update(Buffer.from(parts[3],"base64url")),decipher.final()]).toString("utf8");
+    }catch{return "";}
+  };
   db.exec(`
     CREATE TABLE IF NOT EXISTS booking_portals(
       booking_id TEXT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
@@ -176,16 +194,16 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       INSERT INTO booking_portals(booking_id,token_hash,token_value,created_at,updated_at)
       VALUES(?,?,?,?,?)
       ON CONFLICT(booking_id) DO UPDATE SET token_hash=excluded.token_hash,token_value=excluded.token_value,updated_at=excluded.updated_at
-    `).run(bookingId, digest(token), token, stamp, stamp);
+    `).run(bookingId, digest(token), sealSecret(token), stamp, stamp);
     return token;
   }
 
   function newInviteToken(bookingId: string) {
     const existing = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
-    if (existing?.token_value) return String(existing.token_value);
+    if (existing?.token_value) { const current=openSecret(existing.token_value); if(current) return current; }
     const token = randomBytes(32).toString("hex");
     db.prepare("INSERT INTO participant_invites(booking_id,token_hash,token_value,created_at) VALUES(?,?,?,?)")
-      .run(bookingId,digest(token),token,now());
+      .run(bookingId,digest(token),sealSecret(token),now());
     return token;
   }
 
@@ -262,7 +280,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       db.prepare(`
         INSERT INTO participants(id,booking_id,name,checkin_hash,checkin_value,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?)
-      `).run(randomUUID(), bookingId, name.slice(0, 120), checkin.hash, checkin.token, stamp, stamp);
+      `).run(randomUUID(), bookingId, name.slice(0, 120), checkin.hash, sealSecret(checkin.token), stamp, stamp);
     }
     if (names.length) rebalance(bookingId);
     return { token, inviteToken, expectedTeams: summary.teamSizes };
@@ -582,7 +600,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
         safeText(req.body.guardianPhone,30),
         req.body.safetyAcknowledged ? 1 : 0,
         checkin.hash,
-        checkin.token,
+        sealSecret(checkin.token),
         stamp,
         stamp,
       );
@@ -712,7 +730,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       `).run(
         randomUUID(),booking.id,name,safeText(req.body.email,254),safeText(req.body.phone,30),
         safeText(req.body.guardianName,120),safeText(req.body.guardianPhone,30),
-        req.body.waiverSigned ? 1 : 0,checkin.hash,checkin.token,stamp,stamp
+        req.body.waiverSigned ? 1 : 0,checkin.hash,sealSecret(checkin.token),stamp,stamp
       );
       rebalance(booking.id);
       res.status(201).json(eventData(booking.id));
