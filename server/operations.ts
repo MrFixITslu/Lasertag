@@ -427,13 +427,14 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       if (count >= 60) fail(400, "Roster limit reached.");
       const name = text(req.body.name, "participant name", 120, 2);
       const stamp = now();
+      const checkin = newCheckinToken();
       db.prepare(`
-        INSERT INTO participants(id,booking_id,name,email,phone,guardian_name,guardian_phone,waiver_signed,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO participants(id,booking_id,name,email,phone,guardian_name,guardian_phone,waiver_signed,checkin_hash,checkin_value,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         randomUUID(),booking.id,name,safeText(req.body.email,254),safeText(req.body.phone,30),
         safeText(req.body.guardianName,120),safeText(req.body.guardianPhone,30),
-        req.body.waiverSigned ? 1 : 0,stamp,stamp
+        req.body.waiverSigned ? 1 : 0,checkin.hash,checkin.token,stamp,stamp
       );
       rebalance(booking.id);
       res.status(201).json(eventData(booking.id));
