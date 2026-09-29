@@ -101,6 +101,7 @@ const Admin = lazy(() => import('./Admin'));
 const RegistrationPortal = lazy(() => import('./RegistrationPortal'));
 const ParticipantJoin = lazy(() => import('./ParticipantJoin'));
 const ParticipantCheckin = lazy(() => import('./ParticipantCheckin'));
+const Store = lazy(() => import('./Store'));
 function App() {
   if (/^\/admin\/?$/.test(window.location.pathname)) {
     return <Suspense fallback={<p role="status">Loading booking control…</p>}><Admin /></Suspense>;
@@ -113,6 +114,9 @@ function App() {
   }
   if (/^\/checkin\/[a-f0-9]{48}\/?$/i.test(window.location.pathname)) {
     return <Suspense fallback={<p role="status">Loading check-in pass…</p>}><ParticipantCheckin /></Suspense>;
+  }
+  if (/^\/store(?:\/.*)?$/i.test(window.location.pathname)) {
+    return <Suspense fallback={<p role="status">Loading CombatZone store…</p>}><Store /></Suspense>;
   }
   return <PublicApp />;
 }
