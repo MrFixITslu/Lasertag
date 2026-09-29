@@ -28,6 +28,7 @@ import { installKpis, validVisit, hashVisit } from "./kpis";
 import { installBusiness } from "./business";
 import { initOperations } from "./operations";
 import { installStore } from "./store";
+import { initMfa } from "./mfa";
 import type { BookingDraft } from "../src/types";
 
 const digest = (value: string) =>
@@ -239,7 +240,9 @@ export function createApp(config: ServerConfig) {
   db.exec(
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','staff')), finance INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);`,
   );
-  const operations = initOperations(db, origin, config.linkSecret ?? config.adminPassword);
+  const linkSecret = config.linkSecret ?? config.adminPassword;
+  const operations = initOperations(db, origin, linkSecret);
+  const mfa = initMfa(db, linkSecret);
   const salt = randomBytes(32);
   const passwordHash = scryptSync(config.adminPassword, salt, 64);
   const app = express();
@@ -340,6 +343,42 @@ export function createApp(config: ServerConfig) {
       legacyHeaders: false,
       message: { error: "Too many attempts. Please try again later." },
     });
+  function adminUser(userId: string) {
+    if (userId === "owner")
+      return {
+        id: "owner",
+        name: config.adminUsername,
+        role: "admin",
+        finance: 1,
+        active: 1,
+      };
+    return db
+      .prepare("SELECT id,name,role,finance,active FROM users WHERE id=?")
+      .get(userId) as Row | undefined;
+  }
+
+  function issueAdminSession(req: Request, res: Response, user: Row) {
+    db.prepare("DELETE FROM sessions WHERE expires <= ? OR token_hash=?").run(
+      Date.now(),
+      digest(token(req)),
+    );
+    const sessionToken = randomBytes(32).toString("hex");
+    const csrf = randomBytes(32).toString("hex");
+    db.prepare(
+      "INSERT INTO sessions (token_hash,csrf,expires,user_id) VALUES (?,?,?,?)",
+    ).run(digest(sessionToken), csrf, Date.now() + sessionLifetime, user.id);
+    return {
+      cookie: sessionToken,
+      body: {
+        username: user.name,
+        csrf,
+        role: user.role,
+        finance: user.role === "admin" || Boolean(user.finance),
+        id: user.id,
+      },
+    };
+  }
+
   app.post("/api/admin/login", limiter(5, 15 * 60_000), async (req, res) => {
     const password =
       typeof req.body?.password === "string" ? req.body.password : "";
@@ -366,34 +405,61 @@ export function createApp(config: ServerConfig) {
       (account ? !account.active : username !== config.adminUsername)
     )
       fail(401, "Incorrect username or password.");
+
     const user = account ?? {
       id: "owner",
       name: config.adminUsername,
       role: "admin",
       finance: 1,
+      active: 1,
     };
-    db.prepare("DELETE FROM sessions WHERE expires <= ? OR token_hash=?").run(
-      Date.now(),
-      digest(token(req)),
+    const challenge = await mfa.begin(
+      user.id,
+      account?.email || config.adminUsername,
     );
-    const sessionToken = randomBytes(32).toString("hex");
-    const csrf = randomBytes(32).toString("hex");
-    db.prepare(
-      "INSERT INTO sessions (token_hash,csrf,expires,user_id) VALUES (?,?,?,?)",
-    ).run(digest(sessionToken), csrf, Date.now() + sessionLifetime, user.id);
-    res
-      .cookie(cookieName, sessionToken, {
-        ...cookieOptions,
-        maxAge: sessionLifetime,
-      })
-      .json({
-        username: user.name,
-        csrf,
-        role: user.role,
-        finance: user.role === "admin" || Boolean(user.finance),
-        id: user.id,
-      });
+    res.status(202).json({
+      twoFactorRequired: true,
+      ...challenge,
+    });
   });
+
+  app.post(
+    "/api/admin/mfa/verify",
+    limiter(10, 15 * 60_000),
+    (req, res) => {
+      const challengeToken =
+        typeof req.body?.challengeToken === "string"
+          ? req.body.challengeToken
+          : "";
+      const code =
+        typeof req.body?.code === "string" ? req.body.code : "";
+      if (challengeToken.length > 128 || code.length > 64)
+        fail(401, "Invalid or expired verification code.");
+
+      const result = mfa.verify(challengeToken, code);
+      if (!result.ok)
+        fail(401, "Invalid or expired verification code.");
+
+      const user = adminUser(result.userId);
+      if (!user?.active)
+        fail(401, "Access has been revoked.");
+
+      const session = issueAdminSession(req, res, user);
+      res
+        .cookie(cookieName, session.cookie, {
+          ...cookieOptions,
+          maxAge: sessionLifetime,
+        })
+        .json({
+          ...session.body,
+          ...(result.recoveryCodes
+            ? { recoveryCodes: result.recoveryCodes }
+            : {}),
+          ...(result.usedRecovery ? { recoveryCodeUsed: true } : {}),
+        });
+    },
+  );
+
   app.use("/api/admin", authenticate);
   app.get("/api/admin/session", (_req, res) =>
     res.json({
@@ -403,6 +469,7 @@ export function createApp(config: ServerConfig) {
       finance:
         res.locals.user.role === "admin" || Boolean(res.locals.user.finance),
       id: res.locals.user.id,
+      twoFactor: mfa.status(res.locals.user.id),
     }),
   );
   app.post("/api/admin/logout", (req, res) => {
