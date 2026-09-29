@@ -70,6 +70,9 @@ type EventData = {
   expectedPlayers: number;
   registeredPlayers: number;
   rosterTeamSizes: number[];
+  recommendedTeamSizes: number[];
+  unassignedPlayers: number;
+  teamBalanceWarning: boolean;
   profile: {
     eventName: string;
     organization: string;
@@ -267,10 +270,12 @@ export default function EventOps({ bookingId, session }: { bookingId: string; se
         <div><dt>Event</dt><dd>{data.profile.eventName || '—'}</dd></div>
         <div><dt>Organization</dt><dd>{data.profile.organization || '—'}</dd></div>
         <div><dt>Registration</dt><dd>{data.registeredPlayers} / {data.expectedPlayers}</dd></div>
-        <div><dt>Balanced teams</dt><dd>{data.rosterTeamSizes.join(' / ') || '—'}</dd></div>
+        <div><dt>Current teams</dt><dd>{data.rosterTeamSizes.join(' / ') || '—'}</dd></div>
+        <div><dt>Recommended balance</dt><dd>{data.recommendedTeamSizes.join(' / ') || '—'}</dd></div>
         <div><dt>Age group</dt><dd>{data.profile.ageGroup}</dd></div>
         <div><dt>Event state</dt><dd>{data.profile.eventStatus.toUpperCase()}</dd></div>
       </dl>
+      {data.teamBalanceWarning && <p className="prototype-warning" role="status"><AlertTriangle size={15}/> Team assignments are uneven or include unassigned players. Current: {data.rosterTeamSizes.join(' / ') || '—'}; recommended: {data.recommendedTeamSizes.join(' / ') || '—'}{data.unassignedPlayers ? ` · ${data.unassignedPlayers} unassigned` : ''}.</p>}
       {data.profile.objectives && <div className="admin-customer-notes"><h3>EVENT GOALS</h3><p>{data.profile.objectives}</p></div>}
       {data.profile.accessibilityNotes && <div className="admin-customer-notes"><h3>ACCESSIBILITY / SETUP</h3><p>{data.profile.accessibilityNotes}</p></div>}
 
