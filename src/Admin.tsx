@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   ClipboardList,
+  KeyRound,
   LogOut,
   RefreshCw,
   Search,
@@ -34,6 +35,17 @@ const labels: Record<Status, string> = {
   cancelled: "Cancelled",
 };
 type Session = AdminSession;
+interface MfaChallenge {
+  twoFactorRequired: true;
+  challengeToken: string;
+  setupRequired: boolean;
+  secret?: string;
+  qrCode?: string;
+}
+interface MfaSession extends Session {
+  recoveryCodes?: string[];
+  recoveryCodeUsed?: boolean;
+}
 interface BookingRow {
   id: string;
   reference: string;
@@ -94,6 +106,9 @@ export default function Admin() {
   const [checking, setChecking] = useState(true);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState<MfaChallenge | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -210,13 +225,14 @@ export default function Admin() {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      setSession(
-        await api<Session>("/api/admin/login", {
-          method: "POST",
-          body: JSON.stringify({ username, password }),
-        }),
-      );
+      const challenge = await api<MfaChallenge>("/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+      setMfaChallenge(challenge);
+      setMfaCode("");
       setPassword("");
     } catch (err) {
       handleError(err);
@@ -225,6 +241,44 @@ export default function Admin() {
       setBusy(false);
     }
   }
+
+  async function verifyMfa(event: FormEvent) {
+    event.preventDefault();
+    if (!mfaChallenge) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const verified = await api<MfaSession>("/api/admin/mfa/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          challengeToken: mfaChallenge.challengeToken,
+          code: mfaCode,
+        }),
+      });
+      setSession(verified);
+      setMfaChallenge(null);
+      setMfaCode("");
+      if (verified.recoveryCodes?.length) {
+        setRecoveryCodes(verified.recoveryCodes);
+      } else if (verified.recoveryCodeUsed) {
+        setNotice("Recovery code accepted. That code cannot be used again.");
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+      setMfaCode("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancelMfa() {
+    setMfaChallenge(null);
+    setMfaCode("");
+    setPassword("");
+    setError("");
+  }
+
   async function signOut() {
     if (dirty && !window.confirm("Discard unsaved changes and sign out?"))
       return;
@@ -238,6 +292,9 @@ export default function Admin() {
       });
       setSection("bookings");
       setSession(null);
+      setMfaChallenge(null);
+      setMfaCode("");
+      setRecoveryCodes([]);
       setList(null);
       setDetail(null);
       setEdit(null);
@@ -357,11 +414,102 @@ export default function Admin() {
         )}
         {checking ? (
           <p role="status">Checking your session…</p>
+        ) : recoveryCodes.length ? (
+          <section className="admin-login hud-panel">
+            <KeyRound size={30} />
+            <h2>SAVE YOUR RECOVERY CODES</h2>
+            <p>
+              Two-factor authentication is active. Save these codes somewhere
+              secure. Each code works once and they will not be shown again.
+            </p>
+            <div className="admin-customer-notes">
+              <pre>{recoveryCodes.join("\n")}</pre>
+            </div>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => navigator.clipboard.writeText(recoveryCodes.join("\n"))}
+            >
+              COPY RECOVERY CODES
+            </button>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => setRecoveryCodes([])}
+            >
+              I SAVED THESE CODES
+            </button>
+          </section>
+        ) : !session && mfaChallenge ? (
+          <form className="admin-login hud-panel" onSubmit={verifyMfa}>
+            <KeyRound size={30} />
+            <h2>
+              {mfaChallenge.setupRequired
+                ? "SET UP TWO-FACTOR AUTHENTICATION"
+                : "TWO-FACTOR VERIFICATION"}
+            </h2>
+            {mfaChallenge.setupRequired ? (
+              <>
+                <p>
+                  Scan this QR code with Google Authenticator, Microsoft
+                  Authenticator, Authy, 1Password, or another TOTP app.
+                </p>
+                {mfaChallenge.qrCode && (
+                  <img
+                    src={mfaChallenge.qrCode}
+                    alt="Two-factor authenticator QR code"
+                    width="240"
+                    height="240"
+                  />
+                )}
+                {mfaChallenge.secret && (
+                  <div className="admin-customer-notes">
+                    <strong>Manual setup key</strong>
+                    <p><code>{mfaChallenge.secret}</code></p>
+                  </div>
+                )}
+                <p>
+                  Enter the current 6-digit code from the authenticator app to
+                  finish enrollment.
+                </p>
+              </>
+            ) : (
+              <p>
+                Enter the current 6-digit code from your authenticator app, or
+                enter one of your one-time recovery codes.
+              </p>
+            )}
+            <label>
+              Authenticator or recovery code
+              <input
+                autoComplete="one-time-code"
+                value={mfaCode}
+                onChange={(event) => setMfaCode(event.target.value)}
+                maxLength={64}
+                required
+                autoFocus
+              />
+            </label>
+            <button className="primary-action" disabled={busy}>
+              {busy ? "VERIFYING…" : "VERIFY AND SIGN IN"}
+            </button>
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={busy}
+              onClick={cancelMfa}
+            >
+              BACK TO PASSWORD
+            </button>
+          </form>
         ) : !session ? (
           <form className="admin-login hud-panel" onSubmit={signIn}>
             <ShieldCheck size={30} />
             <h2>TEAM SIGN IN</h2>
-            <p>Manage requests, deployment schedules and internal notes.</p>
+            <p>
+              Mission Control requires your password and a second
+              authenticator factor.
+            </p>
             <label>
               Email or owner username
               <input
@@ -384,7 +532,7 @@ export default function Admin() {
               />
             </label>
             <button className="primary-action" disabled={busy}>
-              {busy ? "SIGNING IN…" : "SIGN IN"}
+              {busy ? "CHECKING PASSWORD…" : "CONTINUE"}
             </button>
           </form>
         ) : (

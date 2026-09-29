@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app";
+import { decryptMfaSecret, totpCode } from "./mfa";
 import { buildDateChoices } from "../src/lib/booking";
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 
 const password="platform-test-password-long-enough";
+const linkSecret="separate-platform-link-secret-for-tests";
 const origin="http://localhost:5173";
 const cleanups:Array<()=>Promise<void>|void>=[];
 afterEach(async()=>{while(cleanups.length)await cleanups.pop()!();});
@@ -14,7 +16,7 @@ async function start(){
     databasePath:":memory:",
     adminUsername:"admin",
     adminPassword:password,
-    linkSecret:"separate-platform-link-secret-for-tests",
+    linkSecret,
     publicOrigin:origin,
     secureCookies:false,
     staticPath:"public",
@@ -35,7 +37,19 @@ async function start(){
       body:body===undefined?undefined:JSON.stringify(body),
     });
   const login=async()=>{
-    const response=await request("/api/admin/login","POST",{username:"admin",password});
+    const first=await request("/api/admin/login","POST",{username:"admin",password});
+    expect(first.status).toBe(202);
+    const challenge=await first.json();
+    let secret=challenge.secret as string|undefined;
+    if(!secret){
+      const record=db.prepare("SELECT secret_value FROM admin_mfa WHERE user_id='owner'").get() as {secret_value:string}|undefined;
+      expect(record).toBeTruthy();
+      secret=decryptMfaSecret(record!.secret_value,linkSecret);
+    }
+    const response=await request("/api/admin/mfa/verify","POST",{
+      challengeToken:challenge.challengeToken,
+      code:totpCode(secret!),
+    });
     expect(response.status).toBe(200);
     const cookie=response.headers.get("set-cookie")!.split(";")[0];
     const session=await response.json();
