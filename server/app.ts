@@ -452,6 +452,13 @@ export function createApp(config: ServerConfig) {
       throw error;
     }
     const portal = operations.createBookingPortal(id, booking.draft, booking.summary);
+    const notification = operations
+      .notifyBookingCreated(id, portal.token)
+      .catch(() => ({ sent: false, detail: "Confirmation email could not be sent." }));
+    if (app.locals.jobs instanceof Set) {
+      app.locals.jobs.add(notification);
+      void notification.finally(() => app.locals.jobs.delete(notification));
+    }
     res.status(201).json({ reference, status: "pending", portalToken: portal.token });
   });
   const getBooking = (id: string) => {
