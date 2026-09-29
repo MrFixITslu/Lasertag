@@ -8,6 +8,7 @@ const { app, db } = createApp({
   publicOrigin: process.env.PUBLIC_ORIGIN ?? "http://localhost:5173",
   secureCookies: production || process.env.COOKIE_SECURE === "true",
   trustProxy: production ? 1 : 0,
+  linkSecret: process.env.LINK_SECRET ?? process.env.ADMIN_PASSWORD,
 });
 const port = Number(process.env.PORT ?? 3000);
 const server = app.listen(port, "0.0.0.0", () =>
