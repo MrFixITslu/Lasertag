@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { DatabaseSync } from "node:sqlite";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import QRCode from "qrcode";
+import { rateLimit } from "express-rate-limit";
 import nodemailer from "nodemailer";
 import { buildBalancedTeams } from "../src/lib/booking";
 import type { BookingDraft, BookingSummary } from "../src/types";
@@ -522,6 +523,20 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
 
   function installRoutes(app: Express, helpers: Helpers) {
     const { fail, text, getBooking } = helpers;
+    const publicMutation = rateLimit({
+      windowMs: 15 * 60_000,
+      limit: 80,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: { error: "Too many registration attempts. Please try again later." },
+    });
+    const publicFeedback = rateLimit({
+      windowMs: 60 * 60_000,
+      limit: 10,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: { error: "Too many feedback attempts. Please try again later." },
+    });
     const finance = (_req:Request,res:Response,next:NextFunction) =>
       res.locals.user?.role === "admin" || Boolean(res.locals.user?.finance)
         ? next()
@@ -575,7 +590,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       });
     });
 
-    app.post("/api/join/:token", (req, res) => {
+    app.post("/api/join/:token", publicMutation, (req, res) => {
       const booking = inviteBooking(String(req.params.token ?? ""));
       if (!booking) fail(404, "Participant registration link is invalid or expired.");
       ensureUnlocked(booking.id);
@@ -652,7 +667,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       } catch (error) { next(error); }
     });
 
-    app.post("/api/checkin/:token", (req, res) => {
+    app.post("/api/checkin/:token", publicMutation, (req, res) => {
       const participant = checkinParticipant(String(req.params.token ?? ""));
       if (!participant) fail(404, "Check-in link is invalid or expired.");
       if (req.body.safetyAcknowledged !== true)
@@ -674,7 +689,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       res.json({ checkedIn: true });
     });
 
-    app.post("/api/portal/:token/feedback", portal, (req, res) => {
+    app.post("/api/portal/:token/feedback", publicFeedback, portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       const profile = db.prepare("SELECT event_status FROM event_profiles WHERE booking_id=?").get(booking.id) as Row | undefined;
       if (profile?.event_status !== "complete" && booking.status !== "completed")
@@ -688,7 +703,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       res.status(201).json({ ok: true });
     });
 
-    app.put("/api/portal/:token/profile", portal, (req, res) => {
+    app.put("/api/portal/:token/profile", publicMutation, portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       const groupTypes = ["birthday","corporate","school","community","resort","friends","other"];
       const ageGroups = ["children","teens","adults","mixed"];
@@ -717,7 +732,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       res.json(eventData(booking.id));
     });
 
-    app.post("/api/portal/:token/participants", portal, (req, res) => {
+    app.post("/api/portal/:token/participants", publicMutation, portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       ensureUnlocked(booking.id);
       const count = (db.prepare("SELECT COUNT(*) AS n FROM participants WHERE booking_id=? AND active=1").get(booking.id) as Row).n;
@@ -737,7 +752,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       res.status(201).json(eventData(booking.id));
     });
 
-    app.patch("/api/portal/:token/participants/:participantId", portal, (req, res) => {
+    app.patch("/api/portal/:token/participants/:participantId", publicMutation, portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       ensureUnlocked(booking.id);
       const participant = db.prepare("SELECT * FROM participants WHERE id=? AND booking_id=?")
@@ -760,7 +775,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       res.json(eventData(booking.id));
     });
 
-    app.delete("/api/portal/:token/participants/:participantId", portal, (req, res) => {
+    app.delete("/api/portal/:token/participants/:participantId", publicMutation, portal, (req, res) => {
       const booking = (req as any).portalBooking as Row;
       ensureUnlocked(booking.id);
       const result = db.prepare("DELETE FROM participants WHERE id=? AND booking_id=?")
