@@ -157,6 +157,9 @@ export function installStore(app:Express,db:DatabaseSync,helpers:Helpers,linkSec
     const email=text(req.body.email,"email",254,3).toLowerCase();
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400,"Enter a valid email.");
     const phone=text(req.body.phone,"phone",30,7);
+    const phoneDigits=phone.replace(/\D/g,"");
+    if(phoneDigits.length<7||phoneDigits.length>15||!/^[+\d\s().-]+$/.test(phone))
+      fail(400,"Enter a valid phone number.");
     const fulfillment=["pickup","delivery","digital"].includes(req.body.fulfillment)?req.body.fulfillment:"pickup";
     const address=fulfillment==="delivery"?text(req.body.address,"delivery address",500,5):text(req.body.address??"","delivery address",500);
     const notes=text(req.body.notes??"","order notes",1000);
