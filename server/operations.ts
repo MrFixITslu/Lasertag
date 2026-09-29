@@ -39,6 +39,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     CREATE TABLE IF NOT EXISTS booking_portals(
       booking_id TEXT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
       token_hash TEXT UNIQUE NOT NULL,
+      token_value TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -162,11 +163,25 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     const token = randomBytes(32).toString("hex");
     const stamp = now();
     db.prepare(`
-      INSERT INTO booking_portals(booking_id,token_hash,created_at,updated_at)
-      VALUES(?,?,?,?)
-      ON CONFLICT(booking_id) DO UPDATE SET token_hash=excluded.token_hash,updated_at=excluded.updated_at
-    `).run(bookingId, digest(token), stamp, stamp);
+      INSERT INTO booking_portals(booking_id,token_hash,token_value,created_at,updated_at)
+      VALUES(?,?,?,?,?)
+      ON CONFLICT(booking_id) DO UPDATE SET token_hash=excluded.token_hash,token_value=excluded.token_value,updated_at=excluded.updated_at
+    `).run(bookingId, digest(token), token, stamp, stamp);
     return token;
+  }
+
+  function newInviteToken(bookingId: string) {
+    const existing = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
+    if (existing?.token_value) return String(existing.token_value);
+    const token = randomBytes(32).toString("hex");
+    db.prepare("INSERT INTO participant_invites(booking_id,token_hash,token_value,created_at) VALUES(?,?,?,?)")
+      .run(bookingId,digest(token),token,now());
+    return token;
+  }
+
+  function newCheckinToken() {
+    const token = randomBytes(24).toString("hex");
+    return { token, hash: digest(token) };
   }
 
   function rebalance(bookingId: string, randomize = false) {
@@ -199,6 +214,7 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     summary: BookingSummary,
   ) {
     const token = newPortalToken(bookingId);
+    const inviteToken = newInviteToken(bookingId);
     const details = draft.eventDetails;
     const stamp = now();
     db.prepare(`
@@ -232,13 +248,14 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       .filter(Boolean)
       .slice(0, Math.min(60, draft.players));
     for (const name of names) {
+      const checkin = newCheckinToken();
       db.prepare(`
-        INSERT INTO participants(id,booking_id,name,created_at,updated_at)
-        VALUES(?,?,?,?,?)
-      `).run(randomUUID(), bookingId, name.slice(0, 120), stamp, stamp);
+        INSERT INTO participants(id,booking_id,name,checkin_hash,checkin_value,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?)
+      `).run(randomUUID(), bookingId, name.slice(0, 120), checkin.hash, checkin.token, stamp, stamp);
     }
     if (names.length) rebalance(bookingId);
-    return { token, expectedTeams: summary.teamSizes };
+    return { token, inviteToken, expectedTeams: summary.teamSizes };
   }
 
   function portalBooking(rawToken: string) {
