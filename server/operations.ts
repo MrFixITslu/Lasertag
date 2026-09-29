@@ -267,6 +267,24 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     `).get(digest(rawToken)) as Row | undefined;
   }
 
+  function inviteBooking(rawToken: string) {
+    if (!tokenPattern.test(rawToken)) return undefined;
+    return db.prepare(`
+      SELECT b.* FROM participant_invites i
+      JOIN bookings b ON b.id=i.booking_id
+      WHERE i.token_hash=?
+    `).get(digest(rawToken)) as Row | undefined;
+  }
+
+  function checkinParticipant(rawToken: string) {
+    if (!/^[a-f0-9]{48}$/i.test(rawToken)) return undefined;
+    return db.prepare(`
+      SELECT p.*,b.reference,b.date,b.time,b.payload
+      FROM participants p JOIN bookings b ON b.id=p.booking_id
+      WHERE p.checkin_hash=? AND p.active=1
+    `).get(digest(rawToken)) as Row | undefined;
+  }
+
   function leaderboard(bookingId: string) {
     const rounds = db.prepare(
       "SELECT team_a,team_b,score_a,score_b,objective_a,objective_b,status FROM event_rounds WHERE booking_id=? AND status='completed'"
