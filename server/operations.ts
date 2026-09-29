@@ -223,10 +223,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
       if (round.team_a < 0 || round.team_b < 0) continue;
       const a=ensure(round.team_a), b=ensure(round.team_b);
       a.played++; b.played++;
-      a.scored += current.score_a; a.conceded += current.score_b; a.objectives += current.objective_a;
-      b.scored += current.score_b; b.conceded += current.score_a; b.objectives += current.objective_b;
-      if (current.score_a > current.score_b) { a.wins++; b.losses++; a.points += 3; }
-      else if (current.score_b > current.score_a) { b.wins++; a.losses++; b.points += 3; }
+      a.scored += round.score_a; a.conceded += round.score_b; a.objectives += round.objective_a;
+      b.scored += round.score_b; b.conceded += round.score_a; b.objectives += round.objective_b;
+      if (round.score_a > round.score_b) { a.wins++; b.losses++; a.points += 3; }
+      else if (round.score_b > round.score_a) { b.wins++; a.losses++; b.points += 3; }
       else { a.draws++; b.draws++; a.points++; b.points++; }
     }
     return [...table.values()].sort((a,b) =>
