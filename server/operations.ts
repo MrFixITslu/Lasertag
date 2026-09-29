@@ -373,8 +373,10 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
       : [];
     const nonEmptyActual = actualTeamSizes.filter((size)=>size>0);
     const teamBalanceWarning =
+      active.length < 2 ||
       unassignedPlayers > 0 ||
-      (nonEmptyActual.length > 1 && Math.max(...nonEmptyActual)-Math.min(...nonEmptyActual)>1);
+      nonEmptyActual.length < 2 ||
+      Math.max(...nonEmptyActual,0)-Math.min(...nonEmptyActual,0)>1;
     const sizes = actualTeamSizes.length ? actualTeamSizes : recommendedTeamSizes;
     const invite = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
     const portalRecord = includePrivate
