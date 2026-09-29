@@ -842,7 +842,18 @@ export function initOperations(db: DatabaseSync, publicOrigin: string, linkSecre
     app.delete("/api/admin/events/:bookingId/media/:mediaId", (req,res) => {
       const bookingId=String(req.params.bookingId);
       getBooking(bookingId);
-      db.prepare("DELETE FROM event_media WHERE booking_id=? AND media_id=?").run(bookingId,String(req.params.mediaId));
+      const mediaId=String(req.params.mediaId);
+      db.prepare("DELETE FROM event_media WHERE booking_id=? AND media_id=?").run(bookingId,mediaId);
+      const stillPublic = Boolean(
+        db.prepare("SELECT 1 FROM event_media WHERE media_id=? LIMIT 1").get(mediaId) ||
+        db.prepare("SELECT 1 FROM content WHERE media_id=? AND live=1 LIMIT 1").get(mediaId) ||
+        db.prepare("SELECT 1 FROM campaigns WHERE media_id=? AND status<>'draft' LIMIT 1").get(mediaId) ||
+        db.prepare(`
+          SELECT 1 FROM social_posts sp JOIN content c ON c.id=sp.content_id
+          WHERE c.media_id=? AND sp.status IN ('sending','sent','posted','submitted','unknown') LIMIT 1
+        `).get(mediaId)
+      );
+      if(!stillPublic) db.prepare("UPDATE media SET public=0 WHERE id=?").run(mediaId);
       res.json(eventData(bookingId,true));
     });
 
