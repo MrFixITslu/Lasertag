@@ -391,6 +391,101 @@ export function initOperations(db: DatabaseSync, publicOrigin: string) {
     };
   }
 
+  const mailConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
+  const mailer = () => nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_PORT === "465",
+    requireTLS: process.env.SMTP_PORT !== "465",
+    auth: process.env.SMTP_USER
+      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+      : undefined,
+  });
+
+  async function sendEventMessage(
+    bookingId: string,
+    type: "confirmation" | "reminder_7d" | "reminder_1d" | "results",
+    portalTokenOverride?: string,
+  ) {
+    if (!mailConfigured()) return { sent: false, detail: "SMTP not configured." };
+    const booking = db.prepare("SELECT * FROM bookings WHERE id=?").get(bookingId) as Row | undefined;
+    if (!booking) return { sent: false, detail: "Booking not found." };
+    const payload = JSON.parse(booking.payload);
+    const profile = db.prepare("SELECT event_name,organization,event_status FROM event_profiles WHERE booking_id=?")
+      .get(bookingId) as Row | undefined;
+    const portal = db.prepare("SELECT token_value FROM booking_portals WHERE booking_id=?").get(bookingId) as Row | undefined;
+    const token = portalTokenOverride || String(portal?.token_value || "");
+    const registrationUrl = token ? `${publicOrigin}/manage/${token}` : publicOrigin;
+    const join = db.prepare("SELECT token_value FROM participant_invites WHERE booking_id=?").get(bookingId) as Row | undefined;
+    const joinUrl = join?.token_value ? `${publicOrigin}/join/${join.token_value}` : "";
+    const eventName = profile?.event_name || payload.mission?.name || "CombatZone mission";
+    const dates = `${booking.date} at ${booking.time} AST`;
+    const messages = {
+      confirmation: {
+        subject: `CombatZone registration received — ${booking.reference}`,
+        body: `Hi ${payload.draft.customer.fullName},\n\nYour ${eventName} request has been received for ${dates}. Your booking is still pending confirmation.\n\nComplete the event roster and preparation here:\n${registrationUrl}\n\nParticipant self-registration link:\n${joinUrl}\n\nReference: ${booking.reference}\n\nCombatZone SLU`,
+      },
+      reminder_7d: {
+        subject: `CombatZone mission next week — ${booking.reference}`,
+        body: `Your ${eventName} is scheduled for ${dates}. Please review the roster, waivers, emergency contact and venue information before event day:\n${registrationUrl}\n\nReference: ${booking.reference}\n\nCombatZone SLU`,
+      },
+      reminder_1d: {
+        subject: `CombatZone mission tomorrow — ${booking.reference}`,
+        body: `Your ${eventName} is scheduled for ${dates}. Please ensure the participant roster and safety acknowledgements are complete.\n\nEvent registration:\n${registrationUrl}\n\nReference: ${booking.reference}\n\nCombatZone SLU`,
+      },
+      results: {
+        subject: `CombatZone results — ${booking.reference}`,
+        body: `Thanks for playing ${eventName}. Your results, event gallery and feedback form are available here:\n${registrationUrl}\n\nWe hope to see your team back in the CombatZone.\n\nCombatZone SLU`,
+      },
+    } as const;
+    const message = messages[type];
+    try {
+      await mailer().sendMail({
+        from: process.env.SMTP_FROM,
+        to: payload.draft.customer.email,
+        subject: message.subject,
+        text: message.body,
+      });
+      db.prepare(`
+        INSERT INTO communications(booking_id,type,sent_at,status,detail)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(booking_id,type) DO UPDATE SET sent_at=excluded.sent_at,status=excluded.status,detail=excluded.detail
+      `).run(bookingId,type,now(),"sent","");
+      return { sent: true, detail: "" };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0,500) : "Email delivery failed.";
+      db.prepare(`
+        INSERT INTO communications(booking_id,type,sent_at,status,detail)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(booking_id,type) DO UPDATE SET sent_at=excluded.sent_at,status=excluded.status,detail=excluded.detail
+      `).run(bookingId,type,now(),"failed",detail);
+      return { sent: false, detail };
+    }
+  }
+
+  const reminderTick = async () => {
+    if (!mailConfigured()) return;
+    const current = Date.now();
+    const windows = [
+      { type: "reminder_7d" as const, from: current + 6.5*86400000, to: current + 7.5*86400000 },
+      { type: "reminder_1d" as const, from: current + 20*3600000, to: current + 28*3600000 },
+    ];
+    for (const window of windows) {
+      const rows = db.prepare(`
+        SELECT id FROM bookings b
+        WHERE status='confirmed' AND start_ms BETWEEN ? AND ?
+          AND NOT EXISTS(SELECT 1 FROM communications c WHERE c.booking_id=b.id AND c.type=? AND c.status='sent')
+      `).all(window.from,window.to,window.type) as Row[];
+      for (const row of rows) await sendEventMessage(row.id,window.type);
+    }
+  };
+  if (mailConfigured() && process.env.NODE_ENV !== "test") {
+    const timer = setInterval(() => { void reminderTick(); }, 60*60*1000);
+    timer.unref();
+    const initial = setTimeout(() => { void reminderTick(); }, 5000);
+    initial.unref();
+  }
+
   function installRoutes(app: Express, helpers: Helpers) {
     const { fail, text, getBooking } = helpers;
     const portal = (req: Request, _res: Response, next: NextFunction) => {
