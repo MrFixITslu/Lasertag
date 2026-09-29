@@ -119,6 +119,15 @@ describe("CombatZone platform end-to-end and security",()=>{
     });
     expect(joined.status).toBe(201);
     const joinResult=await joined.json();
+    expect(joinResult.event.reference).toBe(receipt.reference);
+    expect(joinResult.event).not.toHaveProperty("participants");
+    expect(joinResult.event).not.toHaveProperty("profile");
+    expect(joinResult.event).not.toHaveProperty("joinUrl");
+    expect(joinResult.event).not.toHaveProperty("registrationUrl");
+    expect(joinResult.event).not.toHaveProperty("rounds");
+    const serializedJoin=JSON.stringify(joinResult);
+    expect(serializedJoin).not.toContain("organizer@example.com");
+    expect(serializedJoin).not.toContain("+17585551111");
     const checkToken=joinResult.checkInUrl.split("/").pop()!;
     expect(checkToken).toMatch(/^[a-f0-9]{48}$/);
     const participantRow=service.db.prepare("SELECT checkin_hash,checkin_value FROM participants").get() as any;
