@@ -384,23 +384,29 @@ export function installKpis(
         .sort((a,b)=>b.margin-a.margin);
 
       const storeOrders = db.prepare("SELECT * FROM store_orders").all() as Row[];
-      const storePaid = storeOrders.filter((order)=>
-        ["paid","fulfilled"].includes(order.status) &&
-        between(localDay(new Date(order.created_at)))
-      );
+      const storePayments = db.prepare(`
+        SELECT sp.order_id,sp.cents,sp.kind,sp.created_at,o.currency
+        FROM store_order_payments sp JOIN store_orders o ON o.id=sp.order_id
+      `).all() as Row[];
+      const selectedStorePayments=storePayments.filter((payment)=>between(localDay(new Date(payment.created_at))));
       const lowStock = (db.prepare("SELECT COUNT(*) AS n FROM store_products WHERE active=1 AND kind='physical' AND stock_qty<=5").get() as Row).n;
-      const storeCurrencies=[...new Set(storePaid.map((row)=>String(row.currency)))].sort();
+      const storeCurrencies=[...new Set(selectedStorePayments.map((row)=>String(row.currency)))].sort();
       result.store = {
         currencies: storeCurrencies.map((currency)=>{
-          const rows=storePaid.filter((row)=>row.currency===currency);
-          const revenue=rows.reduce((sum,row)=>sum+Number(row.total_cents),0);
-          const cost=rows.reduce((sum,row)=>sum+Number(row.total_cost_cents),0);
+          const paymentRows=selectedStorePayments.filter((row)=>row.currency===currency);
+          const netCash=paymentRows.reduce(
+            (sum,row)=>sum+(row.kind==="payment"?Number(row.cents):-Number(row.cents)),0
+          );
+          const paidOrderIds=new Set(paymentRows.filter((row)=>row.kind==="payment").map((row)=>row.order_id));
+          const recognizedCost=storeOrders
+            .filter((order)=>order.currency===currency&&paidOrderIds.has(order.id)&&["paid","fulfilled"].includes(order.status))
+            .reduce((sum,order)=>sum+Number(order.total_cost_cents),0);
           return {
             currency,
             cards:[
-              card("storeRevenue","Store paid/fulfilled sales",revenue,null,"money"),
-              card("storeGrossMargin","Store gross margin",revenue-cost,null,"money","Store sales minus recorded product cost; excludes overhead and transaction fees."),
-              card("storeOrders","Store paid/fulfilled orders",rows.length,null),
+              card("storeNetCash","Store net cash",netCash,null,"money","Recorded store payments minus refunds received/issued in the selected period."),
+              card("storeContribution","Store contribution after product cost",netCash-recognizedCost,null,"money","Net store cash minus recorded product cost for paid/fulfilled orders receiving payment in the period; excludes overhead and transaction fees."),
+              card("storePayingOrders","Store orders receiving payment",paidOrderIds.size,null),
             ],
           };
         }),
