@@ -68,8 +68,28 @@ function recoveryCodes() {
   });
 }
 
+function mfaKey(linkSecret: string) {
+  return createHash("sha256").update(`${linkSecret}|admin-mfa`).digest();
+}
+
+export function decryptMfaSecret(value: string, linkSecret: string) {
+  const [version, ivText, tagText, dataText] = value.split(":");
+  if (version !== "v1" || !ivText || !tagText || !dataText)
+    throw new Error("Invalid MFA secret format.");
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    mfaKey(linkSecret),
+    Buffer.from(ivText, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(tagText, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(dataText, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
 export function initMfa(db: DatabaseSync, linkSecret: string) {
-  const key = createHash("sha256").update(`${linkSecret}|admin-mfa`).digest();
+  const key = mfaKey(linkSecret);
   db.exec(`
     CREATE TABLE IF NOT EXISTS admin_mfa(
       user_id TEXT PRIMARY KEY,
@@ -100,15 +120,7 @@ export function initMfa(db: DatabaseSync, linkSecret: string) {
   }
 
   function open(value: string) {
-    const [version, ivText, tagText, dataText] = value.split(":");
-    if (version !== "v1" || !ivText || !tagText || !dataText)
-      throw new Error("Invalid MFA secret format.");
-    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivText, "base64url"));
-    decipher.setAuthTag(Buffer.from(tagText, "base64url"));
-    return Buffer.concat([
-      decipher.update(Buffer.from(dataText, "base64url")),
-      decipher.final(),
-    ]).toString("utf8");
+    return decryptMfaSecret(value, linkSecret);
   }
 
   function row(userId: string) {
