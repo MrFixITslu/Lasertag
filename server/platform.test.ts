@@ -180,6 +180,16 @@ describe("CombatZone platform end-to-end and security",()=>{
     },auth);
     expect(cost.status).toBe(201);
     expect((await cost.json()).totalCents).toBe(12000);
+
+    service.db.prepare("INSERT INTO media(id,name,mime,bytes,created_at,public) VALUES(?,?,?,?,?,1)")
+      .run("event-photo","event.jpg","image/jpeg",100,new Date().toISOString());
+    service.db.prepare("INSERT INTO event_media(booking_id,media_id,label) VALUES(?,?,?)")
+      .run(bookingId,"event-photo","Event photo");
+    expect((service.db.prepare("SELECT public FROM media WHERE id='event-photo'").get() as any).public).toBe(1);
+    expect((await service.request(
+      `/api/admin/events/${bookingId}/media/event-photo`,"DELETE",{},auth,
+    )).status).toBe(200);
+    expect((service.db.prepare("SELECT public FROM media WHERE id='event-photo'").get() as any).public).toBe(0);
   });
 
   it("runs store inventory, idempotent checkout, payment, fulfillment and refund safeguards",async()=>{
