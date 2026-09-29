@@ -186,6 +186,7 @@ export interface ServerConfig {
   secureCookies: boolean;
   trustProxy?: number;
   staticPath?: string;
+  linkSecret?: string;
 }
 
 export function createApp(config: ServerConfig) {
@@ -226,7 +227,7 @@ export function createApp(config: ServerConfig) {
   db.exec(
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','staff')), finance INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);`,
   );
-  const operations = initOperations(db, origin);
+  const operations = initOperations(db, origin, config.linkSecret ?? config.adminPassword);
   const salt = randomBytes(32);
   const passwordHash = scryptSync(config.adminPassword, salt, 64);
   const app = express();
